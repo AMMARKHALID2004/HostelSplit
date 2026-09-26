@@ -1,0 +1,1 @@
+ALTER TABLE `bot_notifications` ADD `entity_id` text;

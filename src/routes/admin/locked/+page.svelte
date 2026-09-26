@@ -1,0 +1,5 @@
+<script lang="ts">let { data, form } = $props();</script>
+<p class="eyebrow">Cold drink penalty</p><h1>Roommate check-in</h1><p class="muted">Two other roommates must confirm they received the cold drink before a locked roommate can add expenses again.</p>
+{#if form?.message}<p class="error" role="alert">{form.message}</p>{/if}
+{#if data.locked.length}{#each data.locked as person}<section class="card"><h2>🥤 {person.name}</h2><p>{person.confirmations}/2 confirmations</p>{#if person.id === data.currentUserId}<p class="muted">Ask two roommates to confirm after you bring the drink.</p>{:else if person.mine}<p class="muted">You have confirmed this round.</p>{:else}<form method="POST" action="?/confirm"><input type="hidden" name="culpritId" value={person.id} /><button class="button">Confirm received</button></form>{/if}</section>{/each}{:else}<section class="card"><p>Everyone is unlocked.</p></section>{/if}
+<style>.eyebrow{text-transform:uppercase;letter-spacing:.13em;color:#0b806b;font-weight:800;font-size:12px}.card{max-width:600px;margin:16px 0}</style>
