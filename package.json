@@ -5,6 +5,7 @@
   "scripts": {
     "predev": "npm run db:migrate",
     "dev": "vite dev",
+    "prebuild": "node scripts/prepare-pages.mjs",
     "build": "vite build",
     "check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
     "test": "vitest run",

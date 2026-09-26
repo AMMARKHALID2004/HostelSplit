@@ -31,10 +31,10 @@ For a targeted charge, the target can use the app or reply `/accept <expense-id>
 
 ## Deploy to Cloudflare Pages
 
-1. Create a Turso database and an auth token, if you have not already. With `TURSO_DATABASE_URL` and `TURSO_AUTH_TOKEN` set in your local environment, run `npm run db:migrate` once. The deployed app and bot must use these same credentials.
+1. Create a Turso database and an auth token, if you have not already. The deployed app and bot must use the same credentials.
 2. Push this repository to GitHub. In Cloudflare **Workers & Pages → Create application → Pages → Import an existing Git repository**, select it.
 3. Name the Pages project `hostelsplit-ammar` to match `wrangler.jsonc`. Set the framework preset to **SvelteKit**, build command to `npm run build`, and output directory to `.svelte-kit/cloudflare`. The Wrangler configuration sets the compatibility date and `nodejs_compat` flag needed by the server code.
-4. In **Settings → Variables and Secrets**, add `TURSO_DATABASE_URL` as a variable and `TURSO_AUTH_TOKEN` as an encrypted secret for Production (and Preview if preview links should work). Save them before the production deployment or redeploy afterward.
+4. Add `TURSO_DATABASE_URL` as a variable and `TURSO_AUTH_TOKEN` as an encrypted secret for Production during setup or in **Settings → Variables and Secrets**. If you add them after the first deployment, redeploy. `npm run build` applies the database migrations automatically in Cloudflare Pages once both values exist. Set the same values for Preview if preview links should work.
 5. Open the `https://hostelsplit-ammar.pages.dev` URL shown by Cloudflare. The first visitor creates the room PIN and first account, then shares the join link with roommates.
 
 The app needs a real Turso URL and token at runtime. A local `hostelsplit.db` file cannot be used by Cloudflare Pages. Never commit the token to Git.
