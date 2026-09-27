@@ -12,18 +12,15 @@
     "db:push": "drizzle-kit push",
     "db:migrate": "drizzle-kit migrate",
     "db:seed": "node --import tsx scripts/seed.ts",
-    "bot": "node --import tsx bot/index.ts",
     "smoke": "node --import tsx scripts/smoke.ts",
     "deploy": "npm run db:migrate && npm run build && wrangler pages deploy .svelte-kit/cloudflare --project-name hostelsplit --branch main"
   },
   "dependencies": {
     "@libsql/client": "^0.15.0",
     "@sveltejs/kit": "^2.70.3",
-    "@whiskeysockets/baileys": "^7.0.0-rc14",
     "bcryptjs": "^3.0.0",
     "dotenv": "^18.0.4",
     "drizzle-orm": "^0.45.3",
-    "qrcode-terminal": "^0.12.0",
     "svelte": "^5.0.0"
   },
   "devDependencies": {

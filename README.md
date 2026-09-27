@@ -1,57 +1,53 @@
 # HostelSplit
 
-HostelSplit is an installable SvelteKit app and persistent WhatsApp bot for a trusted group of roommates. Both use the same LibSQL database. Amounts are stored as integer paisa.
+A personal expense app for roommates, hosted at **https://hostelsplit.pages.dev** on Cloudflare Pages with Turso. Money is stored as integer paisa. Slack Incoming Webhooks send notifications directly from Pages Functions; no persistent bot or OAuth runtime is needed.
+
+## Accounts and membership
+
+- First setup asks for name, unique username and a shared room PIN (4–8 digits). That account becomes room creator.
+- New roommates use **Invite** to get the signup link. Signup asks for name, username and the room PIN, then waits for the creator's approval in **Invite → Join requests**.
+- Pending/declined accounts cannot access room data or make changes.
+- Sign in with username or an unambiguous name and the PIN. If both name and username are supplied, both must match. Duplicate display names are allowed; usernames are unique, case-insensitive, 3–24 letters/numbers/underscores.
+- Existing accounts stay approved and receive `member_0001` style handles. Name login still works. Change name/username in **Profile**. The earliest existing account becomes room creator.
+- The shared PIN remains a trusted-room login model, not individual passwords.
+
+## Expenses, reviews and penalties
+
+Choose equal or custom amounts. Custom shares must total the bill. Only approved members can be included. Each charged non-payer can reject their own share; the payer covers it without increasing anyone else's amount. A rejection opens a review. Only the payer or creator can cancel the whole expense.
+
+**Reviews** shows spam reports and rejected shares. Each approved member other than the accused gets one public, immutable vote. Four matching verdicts are required. Reports themselves do not count as votes; no automatic lowering of the threshold for small rooms.
+
+- Four **irrelevant expense** votes cancel the expense and add a spam strike. Two verified spam strikes lock new expenses until two other members confirm the existing cold-drink penalty was served.
+- Four **avoiding payment** votes restore the rejected charge and add an avoidance incident. Every third verified incident adds one round of fries for everyone. The room creator marks fries served.
+- Four **valid expense / justified rejection** votes close the review without a penalty. A confirmed avoidance charge cannot be rejected again.
+- Manual cancellation closes pending reviews. Confirmed settlement payments remain in history and balances even when an expense is cancelled.
+
+## Slack
+
+Create an Incoming Webhook using [Slack's setup guide](https://docs.slack.dev/messaging/sending-messages-using-incoming-webhooks/) and put `SLACK_WEBHOOK_URL` in `.env` and the encrypted Cloudflare Pages environment. Never commit or share the URL.
+
+Notifications cover expense creation/cancellation, share acceptance/rejection, spam reports, review votes/verdicts, penalties, payment submission/confirmation/rejection, and membership requests/decisions. Messages contain no PIN, account number, QR or payment proof. Slack is send-only: use the app for all actions.
+
+The room creator can open **Slack** to see delivery status, send a test and retry. Events are saved transactionally in an outbox. A database lease serializes sends and respects Slack rate limits. Failed deliveries retry on future app requests; no traffic means retries wait until someone uses the app or clicks Retry. A timeout after Slack accepts a message can cause duplicate delivery. Old WhatsApp tables remain solely to preserve existing data; the bot code and dependencies have been removed.
 
 ## Run locally
 
-1. `npm install`
-2. `npm run dev` (this runs database migrations automatically). Without an `.env` file it uses `hostelsplit.db` in this directory.
-3. Open the shown local URL. The first visitor sees **Create your room** and chooses their name and a 4–8 digit room PIN.
-4. After signing in, use **Share join link** on the dashboard. Friends open that link, choose their names, and enter the shared PIN.
-
-No secret or PIN environment variable is needed. The app stores a hashed room PIN and its generated session key in the shared database. `npm run db:seed -- Ali Sara Bilal` is an optional development shortcut that still requires a matching `ROOM_PIN` environment variable.
-
-`localhost` is only accessible on the device running the server. Friends should use the deployed Cloudflare Pages URL below.
-
-The app includes expense entry, targeted charge approval, self-removal, spam flags, cold-drink lock and unlock, pairwise history, payment profiles, settlement proof and recipient review. Only confirmed payments affect balances. Image proofs and QR codes are saved as base64 in LibSQL and served through authenticated image routes.
-
-## Expense controls
-
-Choose **Split equally** or **Custom amount for each person** when adding an expense. Custom amounts include the payer’s own portion and must add up to the total paid. The form shows the assigned total and preserves entries after validation errors.
-
-Each charged roommate can reject their own share. Their charge returns to the payer; other roommates’ amounts stay unchanged. The payer or creator can cancel the whole expense with a recorded reason. Cancelled entries stay visible in **Expense history** and do not affect balances; confirmed payments remain recorded. Spam reports are a separate action and still require two different reporters.
-
-## WhatsApp bot
-
-Run `npm run bot` as a **persistent Node process**. On its first run, scan the QR using WhatsApp Linked Devices. Credentials are saved in `auth_state/` and excluded from version control. If `BOT_GROUP_JID` is unset, the connected bot lists the groups it can see. Copy the hostel group JID to `.env` and restart.
-
-Each roommate opens **Profile**, generates a one-time code, and sends `/link 123456` in that WhatsApp group. The bot then accepts commands such as:
-
-```text
-expense chai 350 paid by Ali for all
-expense mess 1200 paid by Sara for Ali, Sara, Bilal
-expense delivery 800 paid by Bilal for Hamza
+```bash
+npm install
+npm run dev
 ```
 
-For a targeted charge, the target can use the app or reply `/accept <expense-id>` or `/reject <expense-id>` in the group. Bot notifications are queued in the database so PWA actions can reach the bot when it reconnects. Keep the process running with a supervisor such as PM2 on a device or VM that stays online. The bot cannot run in a serverless function.
+Copy `.env.example` to `.env`. Without Turso configuration, local development uses `hostelsplit.db`. For isolated testing, use a separate SQLite URL and an empty Slack webhook. `npm run db:seed -- Ali Sara Bilal` is a development shortcut requiring `ROOM_PIN`.
 
-## Deploy to Cloudflare Pages
+## Deploy
 
-The live app is **https://hostelsplit.pages.dev**. Cloudflare Pages hosts the web app and its server routes; Turso stores the shared data. The first visitor creates the room and chooses the PIN, then shares the join link with roommates.
+The `hostelsplit` Pages project uses direct uploads. GitHub pushes alone do not deploy.
 
-The existing `hostelsplit` Pages project uses direct uploads. GitHub pushes do not automatically deploy it. To publish an update from this repository:
+1. Put `TURSO_DATABASE_URL`, `TURSO_AUTH_TOKEN` and `SLACK_WEBHOOK_URL` in local `.env`.
+2. Set the same values in Pages **Settings → Variables and Secrets** (tokens/webhook encrypted).
+3. `npx wrangler login` if needed, then `npm run deploy`.
 
-1. Set `TURSO_DATABASE_URL` and `TURSO_AUTH_TOKEN` in the local `.env` file.
-2. Run `npx wrangler login` if this computer is not already authorized.
-3. Run `npm run deploy`. This applies Turso migrations, builds the app, and uploads it to the production Pages URL.
-
-In the Cloudflare project, **Settings → Variables and Secrets** must contain `TURSO_DATABASE_URL` and the encrypted `TURSO_AUTH_TOKEN`. `wrangler.jsonc` sets the Pages output directory, compatibility date, and Node compatibility flag. The production environment is already configured.
-
-For a separate project using Cloudflare's Git integration, import the GitHub repository in the Pages dashboard, use build command `npm run build` and output `.svelte-kit/cloudflare`, and set both Turso values before building. Cloudflare builds apply migrations automatically. Set the Wrangler project name to match that project.
-
-The app needs a real Turso URL and token at runtime. A local `hostelsplit.db` file cannot be used by Cloudflare Pages. `.env` is ignored by Git.
-
-The PWA can be installed on supported browsers from the HTTPS Pages URL. Expense actions require an internet connection. The WhatsApp bot runs separately as described above.
+Deploy applies migrations, builds, and uploads `.svelte-kit/cloudflare`. For Git-connected Pages projects, use `npm run build` and output `.svelte-kit/cloudflare`; builds migrate automatically. The migration preserves existing users, expenses and payments. `.env` is ignored by Git. Friends can install the PWA from the HTTPS Pages URL; actions require internet access.
 
 ## Verify
 
@@ -62,4 +58,4 @@ npm run smoke
 npm run build
 ```
 
-`smoke` makes a temporary LibSQL database, applies the migrations, and exercises targeted approval, flags, lock and unlock, settlement confirmation, and split disputes.
+Smoke tests use a temporary SQLite database and a mocked Slack transport, never the production room or webhook.

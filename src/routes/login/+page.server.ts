@@ -13,8 +13,8 @@ export const actions = {
     const name = String(data.get('name') ?? '');
     const pin = String(data.get('pin') ?? '');
     if (!(await getRoomSettings())) redirect(303, '/setup');
-    const result = await authenticate(name, pin);
-    if (!result.user) return fail(400, { message: result.reason === 'name' ? 'No account with that name. Join the room first.' : 'That PIN is incorrect.' });
+    const result = await authenticate(name, pin, String(data.get('username') ?? ''));
+    if (!result.user) return fail(400, { message: 'Check your username, name and PIN. If names are shared, use your unique username.' });
     await setSession(cookies, result.user.id);
     redirect(303, '/');
   }

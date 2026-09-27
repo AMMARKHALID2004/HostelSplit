@@ -15,10 +15,16 @@ function signature(payload: string, secret: string) {
   return createHmac('sha256', secret).update(payload).digest('base64url');
 }
 
-export async function authenticate(name: string, pin: string) {
+export const validUsername = (value: string) => /^[a-z0-9_]{3,24}$/.test(value);
+export const validName = (value: string) => /^[\p{L}][\p{L} '\-]{1,39}$/u.test(value);
+export async function authenticate(name: string, pin: string, username = '') {
   const people = await db.select().from(users);
-  const user = people.find((person) => person.name.toLocaleLowerCase() === name.trim().toLocaleLowerCase());
-  if (!user) return { user: null, reason: 'name' as const };
+  const matches = username.trim()
+    ? people.filter(p => p.username === username.trim().toLowerCase())
+    : people.filter(p => p.name.toLowerCase() === name.trim().toLowerCase());
+  if (matches.length !== 1) return { user: null, reason: 'identity' as const };
+  const user = matches[0];
+  if (name.trim() && user.name.toLowerCase() !== name.trim().toLowerCase()) return { user: null, reason: 'identity' as const };
   if (!user.pinHash || !(await compare(pin, user.pinHash))) return { user: null, reason: 'pin' as const };
   return { user, reason: null };
 }

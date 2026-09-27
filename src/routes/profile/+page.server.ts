@@ -1,16 +1,16 @@
 import { fail, redirect } from '@sveltejs/kit';
 import { and, eq } from 'drizzle-orm';
 import { db } from '$lib/server/db';
-import { paymentProfiles } from '$lib/server/schema';
+import { paymentProfiles, users } from '$lib/server/schema';
 import { imageToDataUrl } from '$lib/server/images';
-import { issueLinkCode } from '$lib/server/whatsapp-link';
+import { validName, validUsername } from '$lib/server/auth';
 import type { Actions, PageServerLoad } from './$types';
 
 const methods = ['raast', 'easypaisa', 'jazzcash', 'nayapay', 'bank'];
 
 export const load: PageServerLoad = async ({ locals }) => {
   if (!locals.user) redirect(303, '/login');
-  return { profiles: await db.select({ id: paymentProfiles.id, method: paymentProfiles.method, accountTitle: paymentProfiles.accountTitle, accountNumber: paymentProfiles.accountNumber, bankName: paymentProfiles.bankName, isPrimary: paymentProfiles.isPrimary }).from(paymentProfiles).where(eq(paymentProfiles.userId, locals.user.id)), whatsappJid: locals.user.whatsappJid };
+  return { profiles: await db.select({ id: paymentProfiles.id, method: paymentProfiles.method, accountTitle: paymentProfiles.accountTitle, accountNumber: paymentProfiles.accountNumber, bankName: paymentProfiles.bankName, isPrimary: paymentProfiles.isPrimary }).from(paymentProfiles).where(eq(paymentProfiles.userId, locals.user.id)), identity: { name: locals.user.name, username: locals.user.username } };
 };
 
 export const actions = {
@@ -46,8 +46,14 @@ export const actions = {
     await db.delete(paymentProfiles).where(and(eq(paymentProfiles.id, id), eq(paymentProfiles.userId, locals.user.id)));
     return { success: 'Payment method removed' };
   },
-  link: async ({ locals }) => {
+  identity: async ({ locals, request }) => {
     if (!locals.user) redirect(303, '/login');
-    return { code: await issueLinkCode(locals.user.id) };
+    const data = await request.formData();
+    const name = String(data.get('name') ?? '').trim();
+    const username = String(data.get('username') ?? '').trim().toLowerCase();
+    if (!validName(name) || !validUsername(username)) return fail(400, { message: 'Use a name of 2–40 letters and a username of 3–24 letters, numbers or underscores.' });
+    try { await db.update(users).set({ name, username }).where(eq(users.id, locals.user.id)); }
+    catch { return fail(409, { message: 'That username is already taken.' }); }
+    return { success: 'Name and username saved.' };
   }
 } satisfies Actions;

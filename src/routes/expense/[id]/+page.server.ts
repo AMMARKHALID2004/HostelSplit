@@ -1,7 +1,7 @@
 import { error, fail, redirect } from '@sveltejs/kit';
 import { and, eq } from 'drizzle-orm';
 import { db } from '$lib/server/db';
-import { expenses, expenseSplits, users, spamFlags } from '$lib/server/schema';
+import { expenses, expenseSplits, users, spamFlags, reviews } from '$lib/server/schema';
 import { cancelExpense, flagExpense, rejectSplit, resolveTargetedExpense } from '$lib/server/spam';
 import type { Actions, PageServerLoad } from './$types';
 
@@ -14,7 +14,8 @@ export const load: PageServerLoad = async ({ locals, params }) => {
     db.select().from(users),
     db.select({ id: spamFlags.id }).from(spamFlags).where(and(eq(spamFlags.expenseId, params.id), eq(spamFlags.flaggedBy, locals.user.id)))
   ]);
-  return { expense: found[0], splits, hasFlagged: flags.length > 0, roommates: roommates.map((u) => ({ id: u.id, name: u.name })), currentUserId: locals.user.id };
+  const reviewRows = await db.select().from(reviews).where(eq(reviews.expenseId, params.id));
+  return { reviewRows, expense: found[0], splits, hasFlagged: flags.length > 0, roommates: roommates.map((u) => ({ id: u.id, name: `${u.name} (@${u.username})` })), currentUserId: locals.user.id };
 };
 
 async function runAction(fn: () => Promise<unknown>, success: string) {
@@ -43,6 +44,6 @@ export const actions = {
   },
   flag: async ({ locals, params }) => {
     if (!locals.user) redirect(303, '/login');
-    return runAction(() => flagExpense(params.id, locals.user!.id), 'Spam report recorded. Two reports cancel an expense.');
+    return runAction(() => flagExpense(params.id, locals.user!.id), 'Spam review opened. Four reviewers must agree before a penalty is applied.');
   }
 } satisfies Actions;

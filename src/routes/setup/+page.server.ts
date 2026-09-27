@@ -1,4 +1,5 @@
 import { fail, redirect } from '@sveltejs/kit';
+import { validUsername } from '$lib/server/auth';
 import { hash } from 'bcryptjs';
 import { randomBytes } from 'node:crypto';
 import { db } from '$lib/server/db';
@@ -17,6 +18,8 @@ export const actions = {
     if (await getRoomSettings()) redirect(303, '/login');
     const data = await request.formData();
     const name = String(data.get('name') ?? '').trim();
+    const username = String(data.get('username') ?? '').trim().toLowerCase();
+    if (!validUsername(username)) return fail(400, { message: 'Username: 3–24 lowercase letters, numbers or underscores.' });
     const pin = String(data.get('pin') ?? '');
     const confirm = String(data.get('confirm') ?? '');
     if (!validName(name)) return fail(400, { message: 'Enter a name between 2 and 40 letters.' });
@@ -26,8 +29,8 @@ export const actions = {
     try {
       const pinHash = await hash(pin, 12);
       await db.transaction(async (tx) => {
-        await tx.insert(roomSettings).values({ id: 'default', pinHash, sessionSecret: randomBytes(32).toString('hex'), createdAt: Date.now() });
-        await tx.insert(users).values({ id, name, pinHash, createdAt: Date.now() });
+        await tx.insert(roomSettings).values({ id: 'default', ownerId: id, pinHash, sessionSecret: randomBytes(32).toString('hex'), createdAt: Date.now() });
+        await tx.insert(users).values({ id, name, username, pinHash, createdAt: Date.now() });
       });
       await setSession(cookies, id);
       redirect(303, '/');

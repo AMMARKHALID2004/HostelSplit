@@ -30,10 +30,10 @@ export function calculateBalances(userIds: string[], expenseRows: Expense[], spl
 
 export async function getBalances() {
   const [userRows, expenseRows, splitRows, settlementRows] = await Promise.all([
-    db.select().from(users), db.select().from(expenses), db.select().from(expenseSplits), db.select().from(settlements)
+    db.select().from(users).where(eq(users.membershipStatus, 'approved')), db.select().from(expenses), db.select().from(expenseSplits), db.select().from(settlements)
   ]);
   const totals = calculateBalances(userRows.map((u) => u.id), expenseRows, splitRows, settlementRows);
-  return userRows.map((u) => ({ userId: u.id, name: u.name, amountPaisa: totals.get(u.id) ?? 0 }));
+  return userRows.map((u) => ({ userId: u.id, name: `${u.name} (@${u.username})`, amountPaisa: totals.get(u.id) ?? 0 }));
 }
 
 export async function getPairwiseDebt(fromUserId: string, toUserId: string) {

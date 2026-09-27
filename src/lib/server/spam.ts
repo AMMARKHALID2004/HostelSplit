@@ -1,6 +1,8 @@
+import { requireMember, openReview } from './reviews';
+import { notify } from './notifications';
 import { and, eq } from 'drizzle-orm';
 import { db } from './db';
-import { botNotifications, expenses, expenseSplits, penaltyConfirmations, spamFlags, users } from './schema';
+import { expenses, expenseSplits, penaltyConfirmations, spamFlags, users, reviews } from './schema';
 
 function requireExpense<T>(value: T | undefined): T {
   if (!value) throw new Error('Expense not found');
@@ -9,6 +11,7 @@ function requireExpense<T>(value: T | undefined): T {
 
 export async function resolveTargetedExpense(expenseId: string, userId: string, accept: boolean) {
   return db.transaction(async (tx) => {
+    const actor = await requireMember(tx, userId);
     const expense = requireExpense((await tx.select().from(expenses).where(eq(expenses.id, expenseId)).limit(1))[0]);
     if (expense.status !== 'pending_approval' || !expense.isTargeted) throw new Error('This charge is no longer awaiting approval');
     const split = (await tx.select().from(expenseSplits).where(and(eq(expenseSplits.expenseId, expenseId), eq(expenseSplits.userId, userId))).limit(1))[0];
@@ -16,18 +19,25 @@ export async function resolveTargetedExpense(expenseId: string, userId: string, 
     const now = Date.now();
     await tx.update(expenseSplits).set({ status: accept ? 'confirmed' : 'rejected', respondedAt: now }).where(eq(expenseSplits.id, split.id));
     await tx.update(expenses).set({ status: accept ? 'active' : 'voided', resolvedAt: now, ...(accept ? {} : { voidedBy: userId, voidReason: 'The charged roommate rejected this charge.' }) }).where(eq(expenses.id, expenseId));
+    if (!accept) await openReview(tx, { expenseId, accusedId: userId, openedBy: userId, kind: 'avoidance', reason: 'The charged roommate rejected the charge.' });
+    await notify(tx, `${actor.name} ${accept ? 'accepted' : 'rejected'} their charge. ${accept ? '' : 'Roommates can review whether the rejection was justified in Reviews.'} Expense: ${expenseId}`);
     return accept ? 'active' : 'voided';
   });
 }
 
 export async function rejectSplit(expenseId: string, userId: string) {
   return db.transaction(async (tx) => {
+    const actor = await requireMember(tx, userId);
     const expense = requireExpense((await tx.select().from(expenses).where(eq(expenses.id, expenseId)).limit(1))[0]);
     if (expense.status !== 'active') throw new Error('Only active expenses can be disputed');
     if (expense.paidBy === userId) throw new Error('You paid this expense. Cancel the entry if it is incorrect.');
     const rows = await tx.select().from(expenseSplits).where(eq(expenseSplits.expenseId, expenseId));
     const mine = rows.find((r) => r.userId === userId && r.status === 'confirmed' && r.sharePaisa > 0);
     if (!mine) throw new Error('You have no confirmed charge to reject in this expense');
+    const priorReview = (await tx.select().from(reviews).where(and(eq(reviews.expenseId, expenseId), eq(reviews.accusedId, userId), eq(reviews.kind, 'avoidance'))))[0];
+    if (priorReview) throw new Error('This charge has already been reviewed. Ask the payer or creator to cancel an incorrect entry.');
+    await openReview(tx, { expenseId, accusedId: userId, openedBy: userId, kind: 'avoidance', reason: 'This roommate rejected their share of the expense.' });
+    await notify(tx, `${actor.name} rejected their share. The payer temporarily covers it. Review whether this was justified in Reviews. Expense: ${expenseId}`);
     const now = Date.now();
     await tx.update(expenseSplits).set({ status: 'rejected', respondedAt: now }).where(eq(expenseSplits.id, mine.id));
     const payerShare = rows.find(r => r.userId === expense.paidBy);
@@ -49,39 +59,35 @@ export async function cancelExpense(expenseId: string, userId: string, reason: s
   const trimmed = reason.trim();
   if (trimmed.length < 3 || trimmed.length > 500) throw new Error('Give a cancellation reason between 3 and 500 characters.');
   return db.transaction(async (tx) => {
+    const actor = await requireMember(tx, userId);
     const expense = requireExpense((await tx.select().from(expenses).where(eq(expenses.id, expenseId)).limit(1))[0]);
     if (expense.paidBy !== userId && expense.createdBy !== userId) throw new Error('Only the payer or creator can cancel the whole expense.');
-    if (expense.status === 'voided') throw new Error('This expense is already cancelled.');
-    await tx.update(expenses).set({ status: 'voided', voidedBy: userId, voidReason: trimmed, resolvedAt: Date.now() }).where(eq(expenses.id, expenseId));
+    if (expense.status === 'voided' && !['All charged roommates rejected their shares.', 'The charged roommate rejected this charge.'].includes(expense.voidReason ?? '')) throw new Error('This expense is already cancelled.');
+    await tx.update(expenses).set({ status: 'voided', voidedBy: userId, voidReason: `Cancelled by payer or creator: ${trimmed}`, resolvedAt: Date.now() }).where(eq(expenses.id, expenseId));
+    await tx.update(reviews).set({ status: 'cancelled', resolvedAt: Date.now() }).where(and(eq(reviews.expenseId, expenseId), eq(reviews.status, 'pending')));
+    await notify(tx, `${actor.name} cancelled an expense: ${trimmed}. Expense: ${expenseId}`);
   });
 }
 
 export async function flagExpense(expenseId: string, userId: string) {
-  return db.transaction(async (tx) => {
-    const expense = requireExpense((await tx.select().from(expenses).where(eq(expenses.id, expenseId)).limit(1))[0]);
-    if (expense.status === 'voided') throw new Error('Expense is already voided');
-    const flagger = (await tx.select({ id: users.id }).from(users).where(eq(users.id, userId)).limit(1))[0];
-    if (!flagger) throw new Error('Unknown roommate');
-    const previous = (await tx.select().from(spamFlags).where(and(eq(spamFlags.expenseId, expenseId), eq(spamFlags.flaggedBy, userId))).limit(1))[0];
-    if (previous) throw new Error('You already flagged this expense');
+  return db.transaction(async tx => {
+    const actor = await requireMember(tx, userId);
+    const expense = requireExpense((await tx.select().from(expenses).where(eq(expenses.id, expenseId)))[0]);
+    if (expense.status === 'voided') throw new Error('Expense is already cancelled.');
+    if (expense.createdBy === userId) throw new Error('Cancel your own incorrect expense instead.');
+    const previous = (await tx.select().from(reviews).where(and(eq(reviews.expenseId, expenseId), eq(reviews.kind, 'spam'))))[0];
+    if (previous) throw new Error('This expense already has a spam review. Open Reviews to vote.');
     await tx.insert(spamFlags).values({ id: crypto.randomUUID(), expenseId, flaggedBy: userId, createdAt: Date.now() });
-    const count = (await tx.select({ id: spamFlags.id }).from(spamFlags).where(eq(spamFlags.expenseId, expenseId))).length;
-    await tx.update(expenses).set({ spamFlagCount: count, ...(count >= 2 ? { status: 'voided', resolvedAt: Date.now(), voidReason: 'Cancelled after two spam reports.' } : {}) }).where(eq(expenses.id, expenseId));
-    if (count < 2) return { voided: false, locked: false, culpritId: expense.createdBy };
-    const culprit = (await tx.select().from(users).where(eq(users.id, expense.createdBy)).limit(1))[0];
-    if (!culprit) throw new Error('Expense creator not found');
-    const strikes = Math.min(2, culprit.strikes + 1);
-    const locked = strikes >= 2;
-    await tx.update(users).set({ strikes, isLocked: locked ? 1 : 0, penaltyRound: locked && !culprit.isLocked ? culprit.penaltyRound + 1 : culprit.penaltyRound }).where(eq(users.id, culprit.id));
-    if (locked && !culprit.isLocked) await tx.insert(botNotifications).values({ id: crypto.randomUUID(), kind: 'lock', entityId: culprit.id, recipientJid: null,
-      message: `🚨 STRIKE 2/2 🚨\n${culprit.name} got their troll expense voided by popular vote. New expenses are locked until they bring a 1.5L Jumbo cold drink to the room. 🥤 Confirm in the app once received.`, createdAt: Date.now() });
-    return { voided: true, locked, culpritId: culprit.id };
+    await openReview(tx, { expenseId, accusedId: expense.createdBy, openedBy: userId, kind: 'spam', reason: 'Reported as an irrelevant expense.' });
+    await notify(tx, `${actor.name} reported an irrelevant expense. Four reviewers must agree before any cancellation or strike. Expense: ${expenseId}`);
+    return { voided: false, locked: false, culpritId: expense.createdBy };
   });
 }
 
 export async function confirmPenalty(culpritId: string, confirmingUserId: string) {
   if (culpritId === confirmingUserId) throw new Error('Another roommate must confirm your cold drink');
   return db.transaction(async (tx) => {
+    await requireMember(tx, confirmingUserId);
     const culprit = (await tx.select().from(users).where(eq(users.id, culpritId)).limit(1))[0];
     if (!culprit || !culprit.isLocked) throw new Error('This roommate is not locked');
     const confirmer = (await tx.select({ id: users.id }).from(users).where(eq(users.id, confirmingUserId)).limit(1))[0];
@@ -91,6 +97,7 @@ export async function confirmPenalty(culpritId: string, confirmingUserId: string
     await tx.insert(penaltyConfirmations).values({ id: crypto.randomUUID(), culpritId, confirmedBy: confirmingUserId, penaltyRound: culprit.penaltyRound, createdAt: Date.now() });
     const count = (await tx.select().from(penaltyConfirmations).where(and(eq(penaltyConfirmations.culpritId, culpritId), eq(penaltyConfirmations.penaltyRound, culprit.penaltyRound)))).length;
     if (count >= 2) await tx.update(users).set({ strikes: 0, isLocked: 0 }).where(eq(users.id, culpritId));
+    await notify(tx, `Cold drink delivery for ${culprit.name} confirmed (${count}/2). ${count >= 2 ? 'New expenses unlocked.' : ''}`);
     return { unlocked: count >= 2, confirmations: count };
   });
 }

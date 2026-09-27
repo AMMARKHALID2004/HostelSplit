@@ -1,5 +1,7 @@
 # HostelSplit — Full Technical Specification
 
+**Current behavior override (September 2026):** User requests supersede the historical specification below. Slack Incoming Webhooks replace WhatsApp/Baileys entirely (send-only notifications, no persistent runtime). Accounts use unique usernames plus display names and the shared PIN; new members require room-creator approval. Invite is a separate tab. Spam and payment-avoidance verdicts require four distinct approved reviewers excluding the accused. Rejected shares open a review; a confirmed avoidance verdict restores the charge. Every third verified avoidance incident adds fries for everyone. See README.md for the implemented flows, migration, delivery/retry behavior and deployment steps. Historical WhatsApp instructions and two-report spam thresholds below no longer apply.
+
 **Version:** 1.1
 
 **Updated personal-app behavior:** Expense entry supports equal or custom amounts totaling the bill. A charged non-payer may reject their own share; the payer absorbs that amount without increasing other roommates’ shares. The last rejected charge voids the expense. Only the payer or creator can cancel an entire expense, with an audit reason. These updates supersede the redistribution behavior in §5.2 below. Existing confirmed settlements remain recorded when expenses are cancelled.

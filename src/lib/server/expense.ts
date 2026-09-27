@@ -1,6 +1,7 @@
 import { desc, inArray } from 'drizzle-orm';
 import { db } from './db';
-import { botNotifications, expenses, expenseSplits, users } from './schema';
+import { expenses, expenseSplits, users } from './schema';
+import { notify } from './notifications';
 import { buildSplits } from '../money';
 
 export const categories = ['chai', 'mess', 'delivery', 'groceries', 'bills', 'other'] as const;
@@ -12,7 +13,7 @@ export function splitAmount(amountPaisa: number, participantIds: string[]) {
 
 export async function createExpense(input: {
   amountPaisa: number; category: Category; description?: string; paidBy: string;
-  createdBy: string; source: 'pwa' | 'whatsapp'; participants: string[];
+  createdBy: string; source: 'pwa'; participants: string[];
   customShares?: { userId: string; sharePaisa: number }[];
 }) {
   if (!categories.includes(input.category)) throw new Error('Invalid category');
@@ -20,7 +21,7 @@ export async function createExpense(input: {
   const splits = buildSplits(input.amountPaisa, input.participants, input.customShares);
   const needed = [...new Set([input.paidBy, input.createdBy, ...input.participants])];
   const existing = await db.select().from(users).where(inArray(users.id, needed));
-  if (existing.length !== needed.length) throw new Error('Unknown roommate');
+  if (existing.length !== needed.length || existing.some(u => u.membershipStatus !== 'approved')) throw new Error('Unknown roommate');
   const actor = existing.find((u) => u.id === input.createdBy)!;
   const payer = existing.find((u) => u.id === input.paidBy)!;
   if (actor.isLocked || payer.isLocked) throw new Error("You're locked until the room confirms your cold drink 🥤");
@@ -39,11 +40,7 @@ export async function createExpense(input: {
       id: crypto.randomUUID(), expenseId: id, userId: split.userId,
       sharePaisa: split.sharePaisa, status: targeted && split.sharePaisa > 0 ? 'pending' : 'confirmed'
     })));
-    if (targeted) {
-      const target = existing.find((u) => u.id === charged[0].userId)!;
-      await tx.insert(botNotifications).values({ id: crypto.randomUUID(), kind: 'targeted', entityId: id, recipientJid: target.whatsappJid,
-        message: `${payer.name} wants to charge ${target.name} Rs. ${(input.amountPaisa / 100).toFixed(2)} for ${input.category}. Reply /accept ${id} or /reject ${id}, or open the app.`, createdAt });
-    }
+    await notify(tx, `${actor.name} added an expense: Rs. ${(input.amountPaisa / 100).toFixed(2)} for ${input.category}, paid by ${payer.name}. ${targeted ? 'The charged roommate must accept or reject it.' : 'Open the app to review your share.'} Expense: ${id}`);
   });
   return { id, status: targeted ? 'pending_approval' : 'active', splits };
 }

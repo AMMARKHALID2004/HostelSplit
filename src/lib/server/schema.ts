@@ -3,6 +3,10 @@ import { integer, sqliteTable, text, uniqueIndex, index } from 'drizzle-orm/sqli
 export const users = sqliteTable('users', {
   id: text('id').primaryKey(),
   name: text('name').notNull(),
+  username: text('username').unique(),
+  membershipStatus: text('membership_status').notNull().default('approved'),
+  avoidanceStrikes: integer('avoidance_strikes').notNull().default(0),
+  friesOwed: integer('fries_owed').notNull().default(0),
   whatsappJid: text('whatsapp_jid').unique(),
   pinHash: text('pin_hash'),
   isLocked: integer('is_locked').notNull().default(0),
@@ -15,6 +19,7 @@ export const roomSettings = sqliteTable('room_settings', {
   id: text('id').primaryKey(),
   pinHash: text('pin_hash').notNull(),
   sessionSecret: text('session_secret').notNull(),
+  ownerId: text('owner_id'),
   createdAt: integer('created_at').notNull()
 });
 
@@ -98,4 +103,38 @@ export const botNotifications = sqliteTable('bot_notifications', {
   message: text('message').notNull(),
   createdAt: integer('created_at').notNull(),
   sentAt: integer('sent_at')
+});
+
+export const reviews = sqliteTable('reviews', {
+  id: text('id').primaryKey(),
+  expenseId: text('expense_id').notNull().references(() => expenses.id),
+  accusedId: text('accused_id').notNull().references(() => users.id),
+  openedBy: text('opened_by').notNull().references(() => users.id),
+  kind: text('kind').notNull(),
+  reason: text('reason').notNull(),
+  status: text('status').notNull().default('pending'),
+  createdAt: integer('created_at').notNull(),
+  resolvedAt: integer('resolved_at')
+}, t => [uniqueIndex('uq_review').on(t.expenseId, t.accusedId, t.kind)]);
+
+export const reviewVotes = sqliteTable('review_votes', {
+  id: text('id').primaryKey(),
+  reviewId: text('review_id').notNull().references(() => reviews.id),
+  userId: text('user_id').notNull().references(() => users.id),
+  verdict: text('verdict').notNull(),
+  createdAt: integer('created_at').notNull()
+}, t => [uniqueIndex('uq_review_vote').on(t.reviewId, t.userId)]);
+
+export const notifications = sqliteTable('notifications', {
+  id: text('id').primaryKey(),
+  message: text('message').notNull(),
+  createdAt: integer('created_at').notNull(),
+  sentAt: integer('sent_at'),
+  attempts: integer('attempts').notNull().default(0),
+  retryAt: integer('retry_at').notNull().default(0),
+  lastError: text('last_error')
+});
+export const notificationLock = sqliteTable('notification_lock', {
+  id: text('id').primaryKey(),
+  until: integer('until').notNull().default(0)
 });

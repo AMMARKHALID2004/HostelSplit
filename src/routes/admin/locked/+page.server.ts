@@ -9,7 +9,7 @@ export const load: PageServerLoad = async ({ locals }) => {
   if (!locals.user) redirect(303, '/login');
   const locked = await db.select().from(users).where(eq(users.isLocked, 1));
   const confirmations = await db.select().from(penaltyConfirmations);
-  return { locked: locked.map((u) => ({ id: u.id, name: u.name, confirmations: confirmations.filter((c) => c.culpritId === u.id && c.penaltyRound === u.penaltyRound).length, mine: confirmations.some((c) => c.culpritId === u.id && c.penaltyRound === u.penaltyRound && c.confirmedBy === locals.user!.id) })), currentUserId: locals.user.id };
+  return { locked: locked.map((u) => ({ id: u.id, name: `${u.name} (@${u.username})`, confirmations: confirmations.filter((c) => c.culpritId === u.id && c.penaltyRound === u.penaltyRound).length, mine: confirmations.some((c) => c.culpritId === u.id && c.penaltyRound === u.penaltyRound && c.confirmedBy === locals.user!.id) })), currentUserId: locals.user.id };
 };
 
 export const actions = {

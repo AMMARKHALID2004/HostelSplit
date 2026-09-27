@@ -1,8 +1,8 @@
 <script lang="ts">let { form } = $props();</script>
-<section class="login card"><p class="eyebrow">Welcome home</p><h1>Split the bill.<br />Keep the peace.</h1><p class="muted">Sign in with your name and room PIN.</p>
+<section class="login card"><p class="eyebrow">Welcome home</p><h1>Split the bill.<br />Keep the peace.</h1><p class="muted">Use your username or name and room PIN. Names shared by multiple people require a username.</p>
   <form method="POST">
-    <label for="name">Your name</label><input id="name" name="name" autocomplete="username" placeholder="The name you joined with" required />
-    <label for="pin">Room PIN</label><input id="pin" name="pin" type="password" autocomplete="current-password" required />
+    <label for="name">Your name</label><input id="name" name="name" autocomplete="name" placeholder="The name you joined with" />
+    <label for="username">Unique username (or sign in with your name)</label><input id="username" name="username" autocomplete="username" autocapitalize="none" spellcheck="false"  minlength="3" maxlength="24" pattern="[a-zA-Z0-9_]+" /><label for="pin">Room PIN</label><input id="pin" name="pin" type="password" autocomplete="current-password" required />
     {#if form?.message}<p class="error" role="alert">{form.message}</p>{/if}
     <button class="button">Enter room</button>
   </form>

@@ -7,7 +7,7 @@ import type { Actions, PageServerLoad } from './$types';
 
 export const load: PageServerLoad = async ({ locals }) => {
   if (!locals.user) redirect(303, '/login');
-  return { users: (await db.select().from(users)).map((u) => ({ id: u.id, name: u.name })), currentUserId: locals.user.id };
+  return { users: (await db.select().from(users)).filter(u => u.membershipStatus === 'approved').map((u) => ({ id: u.id, name: `${u.name} (@${u.username})` })), currentUserId: locals.user.id };
 };
 
 export const actions = {
