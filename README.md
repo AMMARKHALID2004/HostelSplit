@@ -44,7 +44,7 @@ Copy `.env.example` to `.env`. Without Turso configuration, local development us
 The `hostelsplit` Pages project uses direct uploads. GitHub pushes alone do not deploy.
 
 1. Put `TURSO_DATABASE_URL`, `TURSO_AUTH_TOKEN` and `SLACK_WEBHOOK_URL` in local `.env`.
-2. Set the same values in Pages **Settings → Variables and Secrets** (tokens/webhook encrypted).
+2. Set the same values in Pages **Settings → Variables and Secrets** (all three as encrypted secrets; Wrangler clears dashboard plain-text variables absent from its config).
 3. `npx wrangler login` if needed, then `npm run deploy`.
 
 Deploy applies migrations, builds, and uploads `.svelte-kit/cloudflare`. For Git-connected Pages projects, use `npm run build` and output `.svelte-kit/cloudflare`; builds migrate automatically. The migration preserves existing users, expenses and payments. `.env` is ignored by Git. Friends can install the PWA from the HTTPS Pages URL; actions require internet access.
