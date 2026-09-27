@@ -15,6 +15,12 @@ No secret or PIN environment variable is needed. The app stores a hashed room PI
 
 The app includes expense entry, targeted charge approval, self-removal, spam flags, cold-drink lock and unlock, pairwise history, payment profiles, settlement proof and recipient review. Only confirmed payments affect balances. Image proofs and QR codes are saved as base64 in LibSQL and served through authenticated image routes.
 
+## Expense controls
+
+Choose **Split equally** or **Custom amount for each person** when adding an expense. Custom amounts include the payer’s own portion and must add up to the total paid. The form shows the assigned total and preserves entries after validation errors.
+
+Each charged roommate can reject their own share. Their charge returns to the payer; other roommates’ amounts stay unchanged. The payer or creator can cancel the whole expense with a recorded reason. Cancelled entries stay visible in **Expense history** and do not affect balances; confirmed payments remain recorded. Spam reports are a separate action and still require two different reporters.
+
 ## WhatsApp bot
 
 Run `npm run bot` as a **persistent Node process**. On its first run, scan the QR using WhatsApp Linked Devices. Credentials are saved in `auth_state/` and excluded from version control. If `BOT_GROUP_JID` is unset, the connected bot lists the groups it can see. Copy the hostel group JID to `.env` and restart.

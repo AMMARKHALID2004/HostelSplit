@@ -40,6 +40,9 @@ export const expenses = sqliteTable('expenses', {
   status: text('status').notNull().default('active'),
   isTargeted: integer('is_targeted').notNull().default(0),
   spamFlagCount: integer('spam_flag_count').notNull().default(0),
+  splitMode: text('split_mode').notNull().default('equal'),
+  voidedBy: text('voided_by').references(() => users.id),
+  voidReason: text('void_reason'),
   createdAt: integer('created_at').notNull(),
   resolvedAt: integer('resolved_at')
 }, (table) => [index('idx_expenses_status').on(table.status)]);

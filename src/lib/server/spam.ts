@@ -1,7 +1,6 @@
 import { and, eq } from 'drizzle-orm';
 import { db } from './db';
 import { botNotifications, expenses, expenseSplits, penaltyConfirmations, spamFlags, users } from './schema';
-import { splitAmount } from './expense';
 
 function requireExpense<T>(value: T | undefined): T {
   if (!value) throw new Error('Expense not found');
@@ -16,7 +15,7 @@ export async function resolveTargetedExpense(expenseId: string, userId: string, 
     if (!split || split.status !== 'pending') throw new Error('Only the charged roommate can respond');
     const now = Date.now();
     await tx.update(expenseSplits).set({ status: accept ? 'confirmed' : 'rejected', respondedAt: now }).where(eq(expenseSplits.id, split.id));
-    await tx.update(expenses).set({ status: accept ? 'active' : 'voided', resolvedAt: now }).where(eq(expenses.id, expenseId));
+    await tx.update(expenses).set({ status: accept ? 'active' : 'voided', resolvedAt: now, ...(accept ? {} : { voidedBy: userId, voidReason: 'The charged roommate rejected this charge.' }) }).where(eq(expenses.id, expenseId));
     return accept ? 'active' : 'voided';
   });
 }
@@ -25,20 +24,35 @@ export async function rejectSplit(expenseId: string, userId: string) {
   return db.transaction(async (tx) => {
     const expense = requireExpense((await tx.select().from(expenses).where(eq(expenses.id, expenseId)).limit(1))[0]);
     if (expense.status !== 'active') throw new Error('Only active expenses can be disputed');
+    if (expense.paidBy === userId) throw new Error('You paid this expense. Cancel the entry if it is incorrect.');
     const rows = await tx.select().from(expenseSplits).where(eq(expenseSplits.expenseId, expenseId));
-    const mine = rows.find((r) => r.userId === userId && r.status === 'confirmed');
-    if (!mine) throw new Error('You have no confirmed share in this expense');
+    const mine = rows.find((r) => r.userId === userId && r.status === 'confirmed' && r.sharePaisa > 0);
+    if (!mine) throw new Error('You have no confirmed charge to reject in this expense');
     const now = Date.now();
-    await tx.update(expenseSplits).set({ status: 'rejected', sharePaisa: 0, respondedAt: now }).where(eq(expenseSplits.id, mine.id));
-    const remaining = rows.filter((r) => r.status === 'confirmed' && r.id !== mine.id);
-    if (remaining.length < 2) {
-      await tx.update(expenses).set({ status: 'voided', resolvedAt: now }).where(eq(expenses.id, expenseId));
+    await tx.update(expenseSplits).set({ status: 'rejected', respondedAt: now }).where(eq(expenseSplits.id, mine.id));
+    const payerShare = rows.find(r => r.userId === expense.paidBy);
+    if (payerShare) {
+      await tx.update(expenseSplits).set({ sharePaisa: (payerShare.status === 'confirmed' ? payerShare.sharePaisa : 0) + mine.sharePaisa, status: 'confirmed' }).where(eq(expenseSplits.id, payerShare.id));
+    } else {
+      await tx.insert(expenseSplits).values({ id: crypto.randomUUID(), expenseId, userId: expense.paidBy, sharePaisa: mine.sharePaisa, status: 'confirmed' });
+    }
+    const otherCharges = rows.filter(r => r.userId !== userId && r.userId !== expense.paidBy && r.status === 'confirmed' && r.sharePaisa > 0);
+    if (!otherCharges.length) {
+      await tx.update(expenses).set({ status: 'voided', resolvedAt: now, voidedBy: userId, voidReason: 'All charged roommates rejected their shares.' }).where(eq(expenses.id, expenseId));
       return 'voided';
     }
-    for (const share of splitAmount(expense.amountPaisa, remaining.map((r) => r.userId))) {
-      await tx.update(expenseSplits).set({ sharePaisa: share.sharePaisa }).where(and(eq(expenseSplits.expenseId, expenseId), eq(expenseSplits.userId, share.userId)));
-    }
     return 'active';
+  });
+}
+
+export async function cancelExpense(expenseId: string, userId: string, reason: string) {
+  const trimmed = reason.trim();
+  if (trimmed.length < 3 || trimmed.length > 500) throw new Error('Give a cancellation reason between 3 and 500 characters.');
+  return db.transaction(async (tx) => {
+    const expense = requireExpense((await tx.select().from(expenses).where(eq(expenses.id, expenseId)).limit(1))[0]);
+    if (expense.paidBy !== userId && expense.createdBy !== userId) throw new Error('Only the payer or creator can cancel the whole expense.');
+    if (expense.status === 'voided') throw new Error('This expense is already cancelled.');
+    await tx.update(expenses).set({ status: 'voided', voidedBy: userId, voidReason: trimmed, resolvedAt: Date.now() }).where(eq(expenses.id, expenseId));
   });
 }
 
@@ -52,7 +66,7 @@ export async function flagExpense(expenseId: string, userId: string) {
     if (previous) throw new Error('You already flagged this expense');
     await tx.insert(spamFlags).values({ id: crypto.randomUUID(), expenseId, flaggedBy: userId, createdAt: Date.now() });
     const count = (await tx.select({ id: spamFlags.id }).from(spamFlags).where(eq(spamFlags.expenseId, expenseId))).length;
-    await tx.update(expenses).set({ spamFlagCount: count, ...(count >= 2 ? { status: 'voided', resolvedAt: Date.now() } : {}) }).where(eq(expenses.id, expenseId));
+    await tx.update(expenses).set({ spamFlagCount: count, ...(count >= 2 ? { status: 'voided', resolvedAt: Date.now(), voidReason: 'Cancelled after two spam reports.' } : {}) }).where(eq(expenses.id, expenseId));
     if (count < 2) return { voided: false, locked: false, culpritId: expense.createdBy };
     const culprit = (await tx.select().from(users).where(eq(users.id, expense.createdBy)).limit(1))[0];
     if (!culprit) throw new Error('Expense creator not found');

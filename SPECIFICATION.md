@@ -1,6 +1,8 @@
 # HostelSplit — Full Technical Specification
 
-**Version:** 1.0
+**Version:** 1.1
+
+**Updated personal-app behavior:** Expense entry supports equal or custom amounts totaling the bill. A charged non-payer may reject their own share; the payer absorbs that amount without increasing other roommates’ shares. The last rejected charge voids the expense. Only the payer or creator can cancel an entire expense, with an audit reason. These updates supersede the redistribution behavior in §5.2 below. Existing confirmed settlements remain recorded when expenses are cancelled.
 **Target build environment:** OpenAI Codex (ChatGPT Plus) — this document is written to be handed directly to an AI coding agent as its source of truth. Every section that defines behavior includes exact schemas, formulas, and state machines so no design decision is left to inference.
 
 ---
