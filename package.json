@@ -13,7 +13,8 @@
     "db:migrate": "drizzle-kit migrate",
     "db:seed": "node --import tsx scripts/seed.ts",
     "bot": "node --import tsx bot/index.ts",
-    "smoke": "node --import tsx scripts/smoke.ts"
+    "smoke": "node --import tsx scripts/smoke.ts",
+    "deploy": "npm run db:migrate && npm run build && wrangler pages deploy .svelte-kit/cloudflare --project-name hostelsplit --branch main"
   },
   "dependencies": {
     "@libsql/client": "^0.15.0",

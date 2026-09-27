@@ -31,15 +31,21 @@ For a targeted charge, the target can use the app or reply `/accept <expense-id>
 
 ## Deploy to Cloudflare Pages
 
-1. Create a Turso database and an auth token, if you have not already. The deployed app and bot must use the same credentials.
-2. Push this repository to GitHub. In Cloudflare **Workers & Pages → Create application → Pages → Import an existing Git repository**, select it.
-3. Name the Pages project `hostelsplit-ammar` to match `wrangler.jsonc`. Set the framework preset to **SvelteKit**, build command to `npm run build`, and output directory to `.svelte-kit/cloudflare`. The Wrangler configuration sets the compatibility date and `nodejs_compat` flag needed by the server code.
-4. Add `TURSO_DATABASE_URL` as a variable and `TURSO_AUTH_TOKEN` as an encrypted secret for Production during setup or in **Settings → Variables and Secrets**. If you add them after the first deployment, redeploy. `npm run build` applies the database migrations automatically in Cloudflare Pages once both values exist. Set the same values for Preview if preview links should work.
-5. Open the `https://hostelsplit-ammar.pages.dev` URL shown by Cloudflare. The first visitor creates the room PIN and first account, then shares the join link with roommates.
+The live app is **https://hostelsplit.pages.dev**. Cloudflare Pages hosts the web app and its server routes; Turso stores the shared data. The first visitor creates the room and chooses the PIN, then shares the join link with roommates.
 
-The app needs a real Turso URL and token at runtime. A local `hostelsplit.db` file cannot be used by Cloudflare Pages. Never commit the token to Git.
+The existing `hostelsplit` Pages project uses direct uploads. GitHub pushes do not automatically deploy it. To publish an update from this repository:
 
-The PWA manifest, icons, service worker, and install prompt are included. It can be installed on supported browsers from the HTTPS Pages URL. Expense actions still require a network connection because Turso is the source of truth.
+1. Set `TURSO_DATABASE_URL` and `TURSO_AUTH_TOKEN` in the local `.env` file.
+2. Run `npx wrangler login` if this computer is not already authorized.
+3. Run `npm run deploy`. This applies Turso migrations, builds the app, and uploads it to the production Pages URL.
+
+In the Cloudflare project, **Settings → Variables and Secrets** must contain `TURSO_DATABASE_URL` and the encrypted `TURSO_AUTH_TOKEN`. `wrangler.jsonc` sets the Pages output directory, compatibility date, and Node compatibility flag. The production environment is already configured.
+
+For a separate project using Cloudflare's Git integration, import the GitHub repository in the Pages dashboard, use build command `npm run build` and output `.svelte-kit/cloudflare`, and set both Turso values before building. Cloudflare builds apply migrations automatically. Set the Wrangler project name to match that project.
+
+The app needs a real Turso URL and token at runtime. A local `hostelsplit.db` file cannot be used by Cloudflare Pages. `.env` is ignored by Git.
+
+The PWA can be installed on supported browsers from the HTTPS Pages URL. Expense actions require an internet connection. The WhatsApp bot runs separately as described above.
 
 ## Verify
 
