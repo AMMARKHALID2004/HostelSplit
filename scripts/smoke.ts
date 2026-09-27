@@ -171,6 +171,9 @@ process.env.SLACK_WEBHOOK_URL = 'https://hooks.slack.com/services/test/only/mock
 let calls = 0;
 await flushNotifications(async (_url, init) => { calls++; const payload = JSON.parse(String(init?.body)); assert(payload.blocks[0].text.type === 'plain_text','Slack user content not plain text'); return new Response('ok'); });
 assert(calls === 1,'Slack event not delivered exactly once');
+await db.transaction(tx=>notify(tx,'Event immediately after previous delivery'));
+await flushNotifications(async()=>{ calls++; return new Response('ok'); });
+assert(calls === 2,'New event was stranded behind delivery cooldown');
 await db.update(notificationLock).set({ until:0 });
 await flushNotifications(async()=>{ throw new Error('Sent message retried'); });
 await db.transaction(tx=>notify(tx,'Rate limited message'));

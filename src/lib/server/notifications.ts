@@ -15,18 +15,32 @@ export async function flushNotifications(fetcher: typeof fetch = fetch) {
   if (!webhook) return;
   const url = new URL(webhook);
   if (url.protocol !== 'https:' || url.hostname !== 'hooks.slack.com' || !url.pathname.startsWith('/services/')) return;
-  const now = Date.now();
-  const lease = now + 60_000;
-  const claimed = await db.update(notificationLock).set({ until: lease }).where(and(eq(notificationLock.id, 'slack'), lte(notificationLock.until, now))).returning();
-  if (!claimed.length) return;
+  const started = Date.now();
+  let lease = 0;
+  // A second request may arrive while another worker is sending. Wait briefly
+  // for that lease so the new event does not depend on a later visitor.
+  while (Date.now() - started < 20_000) {
+    const pending = await db.select({ id: notifications.id }).from(notifications).where(and(isNull(notifications.sentAt), lte(notifications.retryAt, Date.now()))).limit(1);
+    if (!pending.length) return;
+    lease = Date.now() + 60_000;
+    const claimed = await db.update(notificationLock).set({ until: lease }).where(and(eq(notificationLock.id, 'slack'), lte(notificationLock.until, Date.now()))).returning();
+    if (claimed.length) break;
+    const lock = (await db.select().from(notificationLock).where(eq(notificationLock.id, 'slack')))[0];
+    if (lock && lock.until - Date.now() > 60_000) return; // Slack requested a longer backoff.
+    lease = 0;
+    await new Promise(resolve => setTimeout(resolve, 1100));
+  }
+  if (!lease) return;
+  let releaseAt = Date.now();
   try {
-    const rows = await db.select().from(notifications).where(and(isNull(notifications.sentAt), lte(notifications.retryAt, now))).orderBy(asc(notifications.createdAt)).limit(10);
+    const rows = await db.select().from(notifications).where(and(isNull(notifications.sentAt), lte(notifications.retryAt, Date.now()))).orderBy(asc(notifications.createdAt)).limit(10);
     for (const row of rows) {
       try {
         const response = await fetcher(webhook, { method: 'POST', headers: { 'content-type': 'application/json' },
           body: JSON.stringify({ text: row.message.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;'), blocks: [{ type: 'section', text: { type: 'plain_text', text: row.message, emoji: true } }], mrkdwn: false, unfurl_links: false, unfurl_media: false }), signal: AbortSignal.timeout(5_000) });
         if (!response.ok) {
           const seconds = Math.max(60, Math.min(86400, Number(response.headers.get('retry-after')) || 60 * 2 ** Math.min(row.attempts, 10)));
+          if (response.status === 429) releaseAt = Date.now() + seconds * 1000;
           await db.update(notifications).set({ attempts: row.attempts + 1, lastError: `Slack HTTP ${response.status}`, retryAt: Date.now() + seconds * 1000 }).where(eq(notifications.id, row.id));
           break;
         }
@@ -36,10 +50,10 @@ export async function flushNotifications(fetcher: typeof fetch = fetch) {
         await db.update(notifications).set({ attempts: row.attempts + 1, lastError: 'Slack connection failed', retryAt: Date.now() + 60_000 }).where(eq(notifications.id, row.id));
         break;
       }
-      if (Date.now() - now > 20_000) break;
+      if (Date.now() - started > 20_000) break;
     }
   } finally {
-    await db.update(notificationLock).set({ until: Date.now() + 1100 }).where(eq(notificationLock.until, lease));
+    await db.update(notificationLock).set({ until: Math.max(releaseAt, Date.now() + 1100) }).where(eq(notificationLock.until, lease));
   }
 }
 export async function notificationStatus() {
