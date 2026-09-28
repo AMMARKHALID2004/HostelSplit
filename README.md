@@ -1,19 +1,20 @@
 # HostelSplit
 
-A personal expense app for roommates, hosted at **https://hostelsplit.pages.dev** on Cloudflare Pages with Turso. Money is stored as integer paisa. Slack Incoming Webhooks send notifications directly from Pages Functions; no persistent bot or OAuth runtime is needed.
+A personal expense app for separate roommate rooms, hosted at **https://hostelsplit.pages.dev** on Cloudflare Pages with Turso. Money is stored as integer paisa. Slack Incoming Webhooks send notifications directly from Pages Functions; no persistent bot or OAuth runtime is needed.
 
 ## Accounts and membership
 
-- First setup asks for name, unique username and a shared room PIN (4–8 digits). That account becomes room creator.
+- First setup asks for name, unique username and a room PIN (4–8 digits). That account creates the original room.
+- Open **Rooms → Create a new room** for another workspace with its own PIN, creator approvals, members, balances, expenses, payment methods, reviews, penalties and Slack channel. Switch between your rooms from **Rooms**. One account can belong to several rooms.
 - New roommates use **Invite** to get the signup link. Signup asks for name, username and the room PIN, then waits for the creator's approval in **Invite → Join requests**.
 - Pending/declined accounts cannot access room data or make changes.
-- Sign in with username or an unambiguous name and the PIN. If both name and username are supplied, both must match. Duplicate display names are allowed; usernames are unique, case-insensitive, 3–24 letters/numbers/underscores.
+- Sign in with username or an unambiguous name and the PIN chosen for your account’s first room. A new room’s PIN is used to join that room; creating or joining one does not change your sign-in PIN. If both name and username are supplied, both must match. Duplicate display names are allowed; usernames are unique, case-insensitive, 3–24 letters/numbers/underscores.
 - Existing accounts stay approved and receive `member_0001` style handles. Name login still works. Change name/username in **Profile**. The earliest existing account becomes room creator.
-- The shared PIN remains a trusted-room login model, not individual passwords.
+- PIN login remains a trusted group model.
 
 ## Expenses, reviews and penalties
 
-Choose equal or custom amounts. Custom shares must total the bill. Only approved members can be included. Each charged non-payer can reject their own share; the payer covers it without increasing anyone else's amount. A rejection opens a review. Only the payer or creator can cancel the whole expense.
+Choose equal or custom amounts. Custom shares must total the bill. Only approved members of the selected room can be included. If the creator or payer is locked in that room, the error names them. Each charged non-payer can reject their own share; the payer covers it without increasing anyone else's amount. A rejection opens a review. Only the payer or creator can cancel the whole expense.
 
 **Reviews** shows spam reports and rejected shares. Each approved member other than the accused gets one public, immutable vote. Four matching verdicts are required. Reports themselves do not count as votes; no automatic lowering of the threshold for small rooms.
 
@@ -24,11 +25,11 @@ Choose equal or custom amounts. Custom shares must total the bill. Only approved
 
 ## Slack
 
-Create an Incoming Webhook using [Slack's setup guide](https://docs.slack.dev/messaging/sending-messages-using-incoming-webhooks/) and put `SLACK_WEBHOOK_URL` in `.env` and the encrypted Cloudflare Pages environment. Never commit or share the URL.
+Create an Incoming Webhook using [Slack's setup guide](https://docs.slack.dev/messaging/sending-messages-using-incoming-webhooks/). The original room uses `SLACK_WEBHOOK_URL` in `.env` and the encrypted Cloudflare Pages environment. For each additional room, its creator opens **Slack** and saves that room’s own webhook URL. Never commit or share the URL.
 
 Notifications cover expense creation/cancellation, share acceptance/rejection, spam reports, review votes/verdicts, penalties, payment submission/confirmation/rejection, and membership requests/decisions. Messages contain no PIN, account number, QR or payment proof. Slack is send-only: use the app for all actions.
 
-The room creator can open **Slack** to see delivery status, send a test and retry. Events are saved transactionally in an outbox. A database lease serializes sends and respects Slack rate limits. Failed deliveries retry on future app requests; no traffic means retries wait until someone uses the app or clicks Retry. A timeout after Slack accepts a message can cause duplicate delivery. Old WhatsApp tables remain solely to preserve existing data; the bot code and dependencies have been removed.
+The room creator can open **Slack** to see that room’s delivery status, send a test and retry. Events are saved transactionally in an outbox. A database lease serializes sends and respects Slack rate limits. Failed deliveries retry on future app requests; no traffic means retries wait until someone uses the app or clicks Retry. A timeout after Slack accepts a message can cause duplicate delivery. Old WhatsApp tables remain solely to preserve existing data; the bot code and dependencies have been removed.
 
 ## Run locally
 
@@ -47,7 +48,7 @@ The `hostelsplit` Pages project uses direct uploads. GitHub pushes alone do not 
 2. Set the same values in Pages **Settings → Variables and Secrets** (all three as encrypted secrets; Wrangler clears dashboard plain-text variables absent from its config).
 3. `npx wrangler login` if needed, then `npm run deploy`.
 
-Deploy applies migrations, builds, and uploads `.svelte-kit/cloudflare`. For Git-connected Pages projects, use `npm run build` and output `.svelte-kit/cloudflare`; builds migrate automatically. The migration preserves existing users, expenses and payments. `.env` is ignored by Git. Friends can install the PWA from the HTTPS Pages URL; actions require internet access.
+Deploy applies migrations, builds, and uploads `.svelte-kit/cloudflare`. For Git-connected Pages projects, use `npm run build` and output `.svelte-kit/cloudflare`; builds migrate automatically. The migration places existing accounts, expenses, approvals, penalties, reviews and payments into the original room. `.env` is ignored by Git. Friends can install the PWA from the HTTPS Pages URL; actions require internet access.
 
 ## Verify
 

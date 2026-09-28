@@ -2,7 +2,7 @@
   import '../app.css';
   import { onMount } from 'svelte';
   import { page } from '$app/state';
-  const links = [['/', 'Overview', '◫'], ['/expense/new', 'Add expense', '+'], ['/expenses', 'Expenses', '▤'], ['/settle', 'Settle up', '⇄'], ['/reviews', 'Reviews', '⚖'], ['/invite', 'Invite', '↗'], ['/profile', 'Profile', '◎']];
+  const links = [['/rooms', 'Rooms', '⌂'], ['/', 'Overview', '◫'], ['/expense/new', 'Add expense', '+'], ['/expenses', 'Expenses', '▤'], ['/settle', 'Settle up', '⇄'], ['/reviews', 'Reviews', '⚖'], ['/invite', 'Invite', '↗'], ['/profile', 'Profile', '◎']];
   let { data, children } = $props();
   let installEvent = $state<Event | null>(null);
   onMount(() => {
@@ -22,7 +22,7 @@
 <div class="shell" class:authenticated={data.user?.membershipStatus === 'approved'}>
   <header><a href="/" class="brand"><span class="brand-icon">H<span>↗</span></span>Hostel<span>Split</span></a><div class="header-right">{#if installEvent}<button class="install" onclick={install}>Install app</button>{/if}<span class="who">{data.user?.name ?? 'Roommates, settled.'}</span>{#if data.user}<span class="avatar">{data.user.name.slice(0, 1)}</span>{/if}</div></header>
   {#if data.user?.membershipStatus === 'approved'}
-    <aside><p class="nav-heading">YOUR ROOM</p><nav aria-label="Main navigation">{#each links as [href, label, icon]}<a {href} class:active={page.url.pathname === href} aria-current={page.url.pathname === href ? 'page' : undefined}><span aria-hidden="true">{icon}</span>{label}</a>{/each}{#if data.user.isOwner}<a href="/notifications" class:active={page.url.pathname === '/notifications'}><span aria-hidden="true">♧</span>Slack</a>{/if}</nav><div class="sidebar-footer"><p>Shared bills.<br /><strong>Good company.</strong></p><form method="POST" action="/logout"><button>Log out ↗</button></form></div></aside>
+    <aside><p class="nav-heading">{data.user.roomName}</p><nav aria-label="Main navigation">{#each links as [href, label, icon]}<a {href} class:active={page.url.pathname === href} aria-current={page.url.pathname === href ? 'page' : undefined}><span aria-hidden="true">{icon}</span>{label}</a>{/each}{#if data.user.isOwner}<a href="/notifications" class:active={page.url.pathname === '/notifications'}><span aria-hidden="true">♧</span>Slack</a>{/if}</nav><div class="sidebar-footer"><p>Shared bills.<br /><strong>Good company.</strong></p><form method="POST" action="/logout"><button>Log out ↗</button></form></div></aside>
   {/if}
   <main>{@render children()}</main>
 </div>

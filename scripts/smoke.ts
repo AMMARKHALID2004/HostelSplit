@@ -14,7 +14,7 @@ for (const file of readdirSync('drizzle').filter((name) => name.endsWith('.sql')
 }
 
 const { db } = await import('../src/lib/server/db');
-const { users, expenses, expenseSplits, reviews, reviewVotes, roomSettings, notifications, notificationLock } = await import('../src/lib/server/schema');
+const { users, expenses, expenseSplits, reviews, reviewVotes, roomSettings, roomMemberships, notifications, notificationLock } = await import('../src/lib/server/schema');
 const { createExpense } = await import('../src/lib/server/expense');
 const { getBalances } = await import('../src/lib/server/balances');
 const { cancelExpense, resolveTargetedExpense, rejectSplit, flagExpense, confirmPenalty } = await import('../src/lib/server/spam');
@@ -22,13 +22,14 @@ const { createSettlement, resolveSettlement } = await import('../src/lib/server/
 const { voteReview, serveFries } = await import('../src/lib/server/reviews');
 const { reviewMembership } = await import('../src/lib/server/membership');
 const { authenticate } = await import('../src/lib/server/auth');
-const { notify, flushNotifications } = await import('../src/lib/server/notifications');
+const { notify, flushNotifications, notificationStatus } = await import('../src/lib/server/notifications');
 const { hash } = await import('bcryptjs');
 const { eq } = await import('drizzle-orm');
 
 const ids = ['a', 'b', 'c'];
 for (const [index, id] of ['a','b','c','d','e'].entries()) await db.insert(users).values({ id, name: ['Ali', 'Bilal', 'Sara', 'Ali', 'Hamza'][index], username: `user_${id}`, pinHash: await hash('1234', 4), createdAt: Date.now() });
 await db.insert(roomSettings).values({ id: 'default', ownerId: 'a', pinHash: await hash('1234',4), sessionSecret: 'test', createdAt: Date.now() });
+for (const id of ['a','b','c','d','e']) await db.insert(roomMemberships).values({ id: `m_${id}`, roomId:'default', userId:id, status:'approved', createdAt:Date.now() });
 const assert = (condition: unknown, message: string) => { if (!condition) throw new Error(message); };
 
 const normal = await createExpense({ amountPaisa: 100, category: 'chai', paidBy: 'a', createdBy: 'a', source: 'pwa', participants: ids });
@@ -41,22 +42,22 @@ assert((await getBalances()).find((b) => b.userId === 'c')?.amountPaisa === -533
 await flagExpense(normal.id, 'b');
 const normalReview = (await db.select().from(reviews).where(eq(reviews.expenseId, normal.id)))[0];
 for (const id of ['b', 'c', 'd']) await voteReview(normalReview.id, id, 'uphold');
-assert((await db.select().from(users).where(eq(users.id,'a')))[0].strikes === 0, 'Three votes must not apply a strike');
+assert((await db.select().from(roomMemberships).where(eq(roomMemberships.userId,'a')))[0].strikes === 0, 'Three votes must not apply a strike');
 await voteReview(normalReview.id, 'e', 'uphold');
-assert((await db.select().from(users).where(eq(users.id, 'a')))[0].strikes === 1, 'First strike missing');
+assert((await db.select().from(roomMemberships).where(eq(roomMemberships.userId, 'a')))[0].strikes === 1, 'First strike missing');
 const second = await createExpense({ amountPaisa: 100, category: 'chai', paidBy: 'a', createdBy: 'a', source: 'pwa', participants: ids });
 await flagExpense(second.id, 'b');
 const secondReview = (await db.select().from(reviews).where(eq(reviews.expenseId, second.id)))[0];
 for (const id of ['b', 'c', 'd', 'e']) await voteReview(secondReview.id, id, 'uphold');
-assert((await db.select().from(users).where(eq(users.id, 'a')))[0].isLocked === 1, 'Second strike did not lock creator');
+assert((await db.select().from(roomMemberships).where(eq(roomMemberships.userId, 'a')))[0].isLocked === 1, 'Second strike did not lock creator');
 let blocked = false;
 try { await createExpense({ amountPaisa: 100, category: 'chai', paidBy: 'a', createdBy: 'a', source: 'pwa', participants: ids }); }
 catch { blocked = true; }
 assert(blocked, 'Locked user could create an expense');
 await confirmPenalty('a', 'b');
-assert((await db.select().from(users).where(eq(users.id, 'a')))[0].isLocked === 1, 'One confirmation unlocked user');
+assert((await db.select().from(roomMemberships).where(eq(roomMemberships.userId, 'a')))[0].isLocked === 1, 'One confirmation unlocked user');
 await confirmPenalty('a', 'c');
-assert((await db.select().from(users).where(eq(users.id, 'a')))[0].isLocked === 0, 'Two confirmations did not unlock user');
+assert((await db.select().from(roomMemberships).where(eq(roomMemberships.userId, 'a')))[0].isLocked === 0, 'Two confirmations did not unlock user');
 
 const proof = 'data:image/png;base64,c21va2U=';
 const paymentId = await createSettlement('c', 'b', 500, proof);
@@ -115,6 +116,7 @@ assert(!(await authenticate('Sara','1234','user_d')).user, 'Mismatched name/user
 assert(!(await authenticate('Ali','wrong','user_a')).user, 'Wrong PIN accepted');
 await rejects(() => db.insert(users).values({ id:'duplicate', name:'Ali', username:'user_a', createdAt:Date.now() }), 'Duplicate username accepted');
 await db.insert(users).values({ id:'pending', name:'Pending', username:'pending_user', membershipStatus:'pending', createdAt:Date.now() });
+await db.insert(roomMemberships).values({ id:'m_pending', roomId:'default', userId:'pending', status:'pending', createdAt:Date.now() });
 await rejects(() => reviewMembership('b','pending',true), 'Non-owner approved member');
 await rejects(() => createExpense({ amountPaisa:100, category:'chai', paidBy:'a', createdBy:'a', source:'pwa', participants:['a','pending'] }), 'Pending participant charged');
 const pendingReview = (await db.select().from(reviews).where(eq(reviews.expenseId, custom.id)))[0];
@@ -138,10 +140,10 @@ for (let incident = 0; incident < 3; incident++) {
   await rejects(() => voteReview(review.id,'pending','uphold'), 'Closed review accepted vote');
   await rejects(() => rejectSplit(entry.id,'b'), 'Restored charge rejected again');
 }
-assert((await db.select().from(users).where(eq(users.id,'b')))[0].friesOwed === 1, 'Three avoidance incidents did not award fries');
+assert((await db.select().from(roomMemberships).where(eq(roomMemberships.userId,'b')))[0].friesOwed === 1, 'Three avoidance incidents did not award fries');
 await rejects(() => serveFries('c','b'), 'Non-owner cleared fries');
 await serveFries('a','b');
-assert((await db.select().from(users).where(eq(users.id,'b')))[0].friesOwed === 0, 'Fries not cleared');
+assert((await db.select().from(roomMemberships).where(eq(roomMemberships.userId,'b')))[0].friesOwed === 0, 'Fries not cleared');
 
 // Targeted rejection before AND after approval must restore balanced shares.
 for (const initiallyAccept of [false,true]) {
@@ -158,10 +160,31 @@ const justified = await createExpense({ amountPaisa:100,category:'other',paidBy:
 await resolveTargetedExpense(justified.id,'d',false);
 const justifiedReview = (await db.select().from(reviews).where(eq(reviews.expenseId,justified.id)))[0];
 for (const id of ['a','b','c','e']) await voteReview(justifiedReview.id,id,'dismiss');
-assert((await db.select().from(users).where(eq(users.id,'d')))[0].avoidanceStrikes === 0,'Justified rejection penalized');
+assert((await db.select().from(roomMemberships).where(eq(roomMemberships.userId,'d')))[0].avoidanceStrikes === 0,'Justified rejection penalized');
 const cancelledReviews = await db.select().from(reviews).where(eq(reviews.expenseId,outside.id));
 assert(cancelledReviews.every(r=>r.status === 'cancelled'),'Manual cancellation left reviews open');
 await rejects(() => voteReview(cancelledReviews[0].id,'d','uphold'),'Cancelled expense restored');
+
+// A second room shares accounts but never shares financial or penalty state.
+await db.insert(roomSettings).values({ id:'second', name:'Second room', ownerId:'b', pinHash:await hash('5678',4), sessionSecret:'second-secret', createdAt:Date.now() });
+for (const id of ['a','b','c']) await db.insert(roomMemberships).values({ id:`second_${id}`, roomId:'second', userId:id, status:id==='c'?'pending':'approved', createdAt:Date.now() });
+await rejects(() => createExpense({ amountPaisa:100, category:'chai', paidBy:'a', createdBy:'b', source:'pwa', participants:['a','c'], roomId:'second' }), 'Pending second-room member charged');
+const beforeOriginal = new Map((await getBalances()).map(b=>[b.userId,b.amountPaisa]));
+const secondExpense = await createExpense({ amountPaisa:1000, category:'chai', paidBy:'a', createdBy:'b', source:'pwa', participants:['a','b'], roomId:'second' });
+assert((await getBalances('second')).find(b=>b.userId==='b')?.amountPaisa === -500, 'Second room balance missing');
+assert((await getBalances()).every(b=>b.amountPaisa===beforeOriginal.get(b.userId)), 'Second room expense changed original balances');
+await rejects(() => rejectSplit(secondExpense.id,'b'), 'Cross-room expense action succeeded');
+await rejects(() => cancelExpense(secondExpense.id,'b','Wrong room'), 'Cross-room cancellation succeeded');
+await rejects(() => flagExpense(secondExpense.id,'a'), 'Cross-room spam report succeeded');
+await rejects(() => voteReview(justifiedReview.id,'b','uphold','second'), 'Cross-room review vote succeeded');
+await db.update(roomMemberships).set({ isLocked:1 }).where(eq(roomMemberships.id,'second_a'));
+let lockedMessage='';
+try { await createExpense({ amountPaisa:100, category:'chai', paidBy:'a', createdBy:'b', source:'pwa', participants:['a','b'], roomId:'second' }); } catch(e) { lockedMessage=e instanceof Error?e.message:''; }
+assert(lockedMessage.includes('Ali') && lockedMessage.includes('@user_a') && !lockedMessage.includes("You're locked"), 'Locked payer message did not identify the payer');
+assert((await db.select().from(roomMemberships).where(eq(roomMemberships.id,'m_a')))[0].isLocked === 0, 'Second-room penalty locked the original room');
+await rejects(() => reviewMembership('a','c',true,'second'), 'Wrong room creator approved membership');
+await reviewMembership('b','c',true,'second');
+assert((await getBalances('second')).length === 3, 'Approved second-room member not visible');
 
 // Slack is mocked, never delivered to the real webhook during tests.
 assert((await db.select().from(notifications)).length > 20, 'Business events did not queue notifications');
@@ -183,5 +206,13 @@ const limited = (await db.select().from(notifications)).find(n=>n.message==='Rat
 assert(limited.sentAt === null && limited.retryAt > Date.now()+110000,'Retry-After not respected');
 await db.update(notificationLock).set({ until:0 });
 await flushNotifications(async()=>{ throw new Error('Backoff bypassed'); });
+await db.update(roomSettings).set({ slackWebhookUrl:'https://hooks.slack.com/services/second/test/mock' }).where(eq(roomSettings.id,'second'));
+await db.transaction(tx=>notify(tx,'Second room only','second'));
+assert(Number((await notificationStatus('second')).pending) === 1,'Second room outbox not scoped');
+await db.update(notificationLock).set({ until:0 });
+let routed='';
+await flushNotifications(async (url)=>{ routed=String(url); return new Response('ok'); });
+assert(routed==='https://hooks.slack.com/services/second/test/mock','Second room notification reached the wrong Slack webhook');
+assert(Number((await notificationStatus('second')).pending) === 0,'Second room notification not delivered');
 process.env.SLACK_WEBHOOK_URL = '';
 console.log('Passed: accounting, custom shares, owner approval, unique usernames, four-person reviews, fries, cancellation permissions and Slack outbox/retries.');

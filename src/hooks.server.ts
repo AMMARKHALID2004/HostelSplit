@@ -1,11 +1,15 @@
 import { redirect, type Handle } from '@sveltejs/kit';
-import { getSessionUser } from '$lib/server/auth';
+import { getSessionContext } from '$lib/server/auth';
 import { flushNotifications } from '$lib/server/notifications';
 
 export const handle: Handle = async ({ event, resolve }) => {
-  event.locals.user = await getSessionUser(event.cookies);
+  const session = await getSessionContext(event.cookies);
+  event.locals.user = session?.user ?? null;
+  event.locals.roomId = session?.roomId ?? null;
+  event.locals.membership = session?.membership ?? null;
   const path = event.url.pathname;
-  if (event.locals.user && event.locals.user.membershipStatus !== 'approved' && !['/pending', '/logout'].includes(path)) redirect(303, '/pending');
+  const publicPaths = path === '/pending' || path === '/logout' || path === '/rooms' || path.startsWith('/rooms/') || path === '/signup' || path === '/login' || path === '/setup' || path.startsWith('/join/');
+  if (event.locals.user && !publicPaths && event.locals.membership?.status !== 'approved') redirect(303, event.locals.membership ? '/pending' : '/rooms');
   const response = await resolve(event);
   if (event.locals.user || event.request.method === 'POST') {
     const delivery = flushNotifications().catch(() => { console.error('Notification delivery deferred'); });

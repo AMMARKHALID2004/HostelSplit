@@ -1,26 +1,26 @@
-import { and, eq, isNull, lte, asc, sql } from 'drizzle-orm';
+import { and, eq, isNull, lte, asc, sql, inArray } from 'drizzle-orm';
 import { db } from './db';
-import { notifications, notificationLock } from './schema';
+import { notifications, notificationLock, roomSettings } from './schema';
 
 type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
-export async function notify(tx: Tx, message: string) {
-  await tx.insert(notifications).values({ id: crypto.randomUUID(), message, createdAt: Date.now() });
+export async function notify(tx: Tx, message: string, roomId = 'default') {
+  await tx.insert(notifications).values({ id: crypto.randomUUID(), message, roomId, createdAt: Date.now() });
 }
-export function slackConfigured() { return Boolean(process.env.SLACK_WEBHOOK_URL); }
+export async function slackConfigured(roomId = 'default') { const room = (await db.select().from(roomSettings).where(eq(roomSettings.id, roomId)))[0]; return Boolean(room?.slackWebhookUrl || (roomId === 'default' && process.env.SLACK_WEBHOOK_URL)); }
 
 // Durable outbox; a database lease serializes delivery across Cloudflare isolates.
 // Failed messages stay queued. Future requests and the owner's Retry button retry them.
 export async function flushNotifications(fetcher: typeof fetch = fetch) {
-  const webhook = process.env.SLACK_WEBHOOK_URL;
-  if (!webhook) return;
-  const url = new URL(webhook);
-  if (url.protocol !== 'https:' || url.hostname !== 'hooks.slack.com' || !url.pathname.startsWith('/services/')) return;
+  const configuredRooms = await db.select({ id: roomSettings.id, slackWebhookUrl: roomSettings.slackWebhookUrl }).from(roomSettings);
+  const webhooks = new Map(configuredRooms.map(room => [room.id, room.slackWebhookUrl || (room.id === 'default' ? process.env.SLACK_WEBHOOK_URL : undefined)]));
+  const availableRooms = configuredRooms.filter(room => webhooks.get(room.id)).map(room => room.id);
+  if (!availableRooms.length) return;
   const started = Date.now();
   let lease = 0;
   // A second request may arrive while another worker is sending. Wait briefly
   // for that lease so the new event does not depend on a later visitor.
   while (Date.now() - started < 20_000) {
-    const pending = await db.select({ id: notifications.id }).from(notifications).where(and(isNull(notifications.sentAt), lte(notifications.retryAt, Date.now()))).limit(1);
+    const pending = await db.select({ id: notifications.id }).from(notifications).where(and(isNull(notifications.sentAt), lte(notifications.retryAt, Date.now()), inArray(notifications.roomId, availableRooms))).limit(1);
     if (!pending.length) return;
     lease = Date.now() + 60_000;
     const claimed = await db.update(notificationLock).set({ until: lease }).where(and(eq(notificationLock.id, 'slack'), lte(notificationLock.until, Date.now()))).returning();
@@ -33,9 +33,13 @@ export async function flushNotifications(fetcher: typeof fetch = fetch) {
   if (!lease) return;
   let releaseAt = Date.now();
   try {
-    const rows = await db.select().from(notifications).where(and(isNull(notifications.sentAt), lte(notifications.retryAt, Date.now()))).orderBy(asc(notifications.createdAt)).limit(10);
+    const rows = await db.select().from(notifications).where(and(isNull(notifications.sentAt), lte(notifications.retryAt, Date.now()), inArray(notifications.roomId, availableRooms))).orderBy(asc(notifications.createdAt)).limit(10);
     for (const row of rows) {
       try {
+        const webhook = webhooks.get(row.roomId);
+        if (!webhook) continue;
+        const url = new URL(webhook);
+        if (url.protocol !== 'https:' || url.hostname !== 'hooks.slack.com' || !url.pathname.startsWith('/services/')) throw new Error('Invalid Slack webhook');
         const response = await fetcher(webhook, { method: 'POST', headers: { 'content-type': 'application/json' },
           body: JSON.stringify({ text: row.message.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;'), blocks: [{ type: 'section', text: { type: 'plain_text', text: row.message, emoji: true } }], mrkdwn: false, unfurl_links: false, unfurl_media: false }), signal: AbortSignal.timeout(5_000) });
         if (!response.ok) {
@@ -56,6 +60,6 @@ export async function flushNotifications(fetcher: typeof fetch = fetch) {
     await db.update(notificationLock).set({ until: Math.max(releaseAt, Date.now() + 1100) }).where(eq(notificationLock.until, lease));
   }
 }
-export async function notificationStatus() {
-  return (await db.select({ pending: sql<number>`count(*)`, failed: sql<number>`sum(case when attempts > 0 then 1 else 0 end)` }).from(notifications).where(isNull(notifications.sentAt)))[0];
+export async function notificationStatus(roomId = 'default') {
+  return (await db.select({ pending: sql<number>`count(*)`, failed: sql<number>`sum(case when attempts > 0 then 1 else 0 end)` }).from(notifications).where(and(isNull(notifications.sentAt), eq(notifications.roomId, roomId))))[0];
 }

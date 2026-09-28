@@ -3,7 +3,7 @@ import { validUsername } from '$lib/server/auth';
 import { hash } from 'bcryptjs';
 import { randomBytes } from 'node:crypto';
 import { db } from '$lib/server/db';
-import { roomSettings, users } from '$lib/server/schema';
+import { roomSettings, users, roomMemberships } from '$lib/server/schema';
 import { getRoomSettings, setSession } from '$lib/server/auth';
 import type { Actions, PageServerLoad } from './$types';
 
@@ -29,8 +29,9 @@ export const actions = {
     try {
       const pinHash = await hash(pin, 12);
       await db.transaction(async (tx) => {
-        await tx.insert(roomSettings).values({ id: 'default', ownerId: id, pinHash, sessionSecret: randomBytes(32).toString('hex'), createdAt: Date.now() });
+        await tx.insert(roomSettings).values({ id: 'default', name: 'Main room', ownerId: id, pinHash, sessionSecret: randomBytes(32).toString('hex'), createdAt: Date.now() });
         await tx.insert(users).values({ id, name, username, pinHash, createdAt: Date.now() });
+        await tx.insert(roomMemberships).values({ id: crypto.randomUUID(), roomId: 'default', userId: id, status: 'approved', createdAt: Date.now() });
       });
       await setSession(cookies, id);
       redirect(303, '/');

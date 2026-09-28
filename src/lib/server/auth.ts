@@ -1,14 +1,15 @@
 import { createHmac, timingSafeEqual } from 'node:crypto';
 import { compare } from 'bcryptjs';
 import { eq } from 'drizzle-orm';
+import { membershipOf } from './rooms';
 import { db } from './db';
 import { roomSettings, users } from './schema';
 
 const cookieName = 'hostelsplit_session';
 const maxAge = 60 * 60 * 24 * 30;
 
-export async function getRoomSettings() {
-  return (await db.select().from(roomSettings).where(eq(roomSettings.id, 'default')).limit(1))[0] ?? null;
+export async function getRoomSettings(roomId = 'default') {
+  return (await db.select().from(roomSettings).where(eq(roomSettings.id, roomId)).limit(1))[0] ?? null;
 }
 
 function signature(payload: string, secret: string) {
@@ -29,10 +30,10 @@ export async function authenticate(name: string, pin: string, username = '') {
   return { user, reason: null };
 }
 
-export async function setSession(cookies: import('@sveltejs/kit').Cookies, userId: string) {
+export async function setSession(cookies: import('@sveltejs/kit').Cookies, userId: string, roomId = 'default') {
   const settings = await getRoomSettings();
   if (!settings) throw new Error('Room setup is required');
-  const payload = Buffer.from(JSON.stringify({ userId, expires: Date.now() + maxAge * 1000 })).toString('base64url');
+  const payload = Buffer.from(JSON.stringify({ userId, roomId, expires: Date.now() + maxAge * 1000 })).toString('base64url');
   cookies.set(cookieName, `${payload}.${signature(payload, settings.sessionSecret)}`, {
     path: '/', httpOnly: true, sameSite: 'lax', secure: process.env.NODE_ENV === 'production' && process.env.HOSTELSPLIT_LAN !== '1', maxAge
   });
@@ -42,9 +43,11 @@ export function clearSession(cookies: import('@sveltejs/kit').Cookies) {
   cookies.delete(cookieName, { path: '/' });
 }
 
-export async function getSessionUser(cookies: import('@sveltejs/kit').Cookies) {
+export async function getSessionContext(cookies: import('@sveltejs/kit').Cookies) {
   const value = cookies.get(cookieName);
   if (!value) return null;
+  // Existing cookies were signed by the original room secret. Keep that key so
+  // people remain signed in after migration and can switch rooms safely.
   const settings = await getRoomSettings();
   if (!settings) return null;
   const [payload, mac] = value.split('.');
@@ -54,11 +57,13 @@ export async function getSessionUser(cookies: import('@sveltejs/kit').Cookies) {
   const b = Buffer.from(expected);
   if (a.length !== b.length || !timingSafeEqual(a, b)) return null;
   try {
-    const parsed = JSON.parse(Buffer.from(payload, 'base64url').toString()) as { userId: string; expires: number };
+    const parsed = JSON.parse(Buffer.from(payload, 'base64url').toString()) as { userId: string; roomId?: string; expires: number };
     if (!parsed.userId || parsed.expires < Date.now()) return null;
-    const found = await db.select().from(users).where(eq(users.id, parsed.userId)).limit(1);
-    return found[0] ?? null;
-  } catch {
-    return null;
-  }
+    const user = (await db.select().from(users).where(eq(users.id, parsed.userId)).limit(1))[0];
+    if (!user) return null;
+    const roomId = parsed.roomId || 'default';
+    const membership = await membershipOf(user.id, roomId);
+    if (!membership) return { user, roomId: null, membership: null };
+    return { user: { ...user, membershipStatus: membership.status, isLocked: membership.isLocked, strikes: membership.strikes, penaltyRound: membership.penaltyRound, avoidanceStrikes: membership.avoidanceStrikes, friesOwed: membership.friesOwed }, roomId, membership };
+  } catch { return null; }
 }

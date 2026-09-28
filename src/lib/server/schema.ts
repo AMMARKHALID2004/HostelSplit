@@ -20,12 +20,28 @@ export const roomSettings = sqliteTable('room_settings', {
   pinHash: text('pin_hash').notNull(),
   sessionSecret: text('session_secret').notNull(),
   ownerId: text('owner_id'),
+  name: text('name').notNull().default('Original room'),
+  slackWebhookUrl: text('slack_webhook_url'),
   createdAt: integer('created_at').notNull()
 });
+
+export const roomMemberships = sqliteTable('room_memberships', {
+  id: text('id').primaryKey(),
+  roomId: text('room_id').notNull().references(() => roomSettings.id),
+  userId: text('user_id').notNull().references(() => users.id),
+  status: text('status').notNull().default('pending'),
+  isLocked: integer('is_locked').notNull().default(0),
+  strikes: integer('strikes').notNull().default(0),
+  penaltyRound: integer('penalty_round').notNull().default(0),
+  avoidanceStrikes: integer('avoidance_strikes').notNull().default(0),
+  friesOwed: integer('fries_owed').notNull().default(0),
+  createdAt: integer('created_at').notNull()
+}, t => [uniqueIndex('uq_room_member').on(t.roomId, t.userId), index('idx_membership_user').on(t.userId)]);
 
 export const paymentProfiles = sqliteTable('payment_profiles', {
   id: text('id').primaryKey(),
   userId: text('user_id').notNull().references(() => users.id),
+  roomId: text('room_id').notNull().default('default'),
   method: text('method').notNull(),
   accountTitle: text('account_title'),
   accountNumber: text('account_number'),
@@ -37,6 +53,7 @@ export const paymentProfiles = sqliteTable('payment_profiles', {
 export const expenses = sqliteTable('expenses', {
   id: text('id').primaryKey(),
   amountPaisa: integer('amount_paisa').notNull(),
+  roomId: text('room_id').notNull().default('default'),
   category: text('category').notNull(),
   description: text('description'),
   paidBy: text('paid_by').notNull().references(() => users.id),
@@ -71,13 +88,15 @@ export const spamFlags = sqliteTable('spam_flags', {
 export const penaltyConfirmations = sqliteTable('penalty_confirmations', {
   id: text('id').primaryKey(),
   culpritId: text('culprit_id').notNull().references(() => users.id),
+  roomId: text('room_id').notNull().default('default'),
   confirmedBy: text('confirmed_by').notNull().references(() => users.id),
   createdAt: integer('created_at').notNull(),
   penaltyRound: integer('penalty_round').notNull()
-}, (table) => [uniqueIndex('uq_penalty_confirmation').on(table.culpritId, table.confirmedBy, table.penaltyRound)]);
+}, (table) => [uniqueIndex('uq_penalty_confirmation').on(table.roomId, table.culpritId, table.confirmedBy, table.penaltyRound)]);
 
 export const settlements = sqliteTable('settlements', {
   id: text('id').primaryKey(),
+  roomId: text('room_id').notNull().default('default'),
   payerId: text('payer_id').notNull().references(() => users.id),
   payeeId: text('payee_id').notNull().references(() => users.id),
   amountPaisa: integer('amount_paisa').notNull(),
@@ -108,6 +127,7 @@ export const botNotifications = sqliteTable('bot_notifications', {
 export const reviews = sqliteTable('reviews', {
   id: text('id').primaryKey(),
   expenseId: text('expense_id').notNull().references(() => expenses.id),
+  roomId: text('room_id').notNull().default('default'),
   accusedId: text('accused_id').notNull().references(() => users.id),
   openedBy: text('opened_by').notNull().references(() => users.id),
   kind: text('kind').notNull(),
@@ -126,6 +146,7 @@ export const reviewVotes = sqliteTable('review_votes', {
 }, t => [uniqueIndex('uq_review_vote').on(t.reviewId, t.userId)]);
 
 export const notifications = sqliteTable('notifications', {
+  roomId: text('room_id').notNull().default('default'),
   id: text('id').primaryKey(),
   message: text('message').notNull(),
   createdAt: integer('created_at').notNull(),
