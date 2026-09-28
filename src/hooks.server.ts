@@ -8,7 +8,9 @@ export const handle: Handle = async ({ event, resolve }) => {
   event.locals.roomId = session?.roomId ?? null;
   event.locals.membership = session?.membership ?? null;
   const path = event.url.pathname;
-  const publicPaths = path === '/pending' || path === '/logout' || path === '/rooms' || path.startsWith('/rooms/') || path === '/signup' || path === '/login' || path === '/setup' || path.startsWith('/join/');
+  const accountPath = path === '/account' || path.startsWith('/account/');
+  if (event.locals.user && !event.locals.user.passwordHash && !accountPath && path !== '/logout') redirect(303, '/account/password');
+  const publicPaths = accountPath || path === '/pending' || path === '/logout' || path === '/rooms' || path.startsWith('/rooms/') || path === '/signup' || path === '/login' || path === '/setup' || path.startsWith('/join/');
   if (event.locals.user && !publicPaths && event.locals.membership?.status !== 'approved') redirect(303, event.locals.membership ? '/pending' : '/rooms');
   const response = await resolve(event);
   if (event.locals.user || event.request.method === 'POST') {

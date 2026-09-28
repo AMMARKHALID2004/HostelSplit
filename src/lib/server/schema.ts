@@ -9,6 +9,10 @@ export const users = sqliteTable('users', {
   friesOwed: integer('fries_owed').notNull().default(0),
   whatsappJid: text('whatsapp_jid').unique(),
   pinHash: text('pin_hash'),
+  passwordHash: text('password_hash'),
+  avatarBase64: text('avatar_base64'),
+  avatarUpdatedAt: integer('avatar_updated_at'),
+  lastRoomId: text('last_room_id'),
   isLocked: integer('is_locked').notNull().default(0),
   strikes: integer('strikes').notNull().default(0),
   penaltyRound: integer('penalty_round').notNull().default(0),
@@ -159,3 +163,12 @@ export const notificationLock = sqliteTable('notification_lock', {
   id: text('id').primaryKey(),
   until: integer('until').notNull().default(0)
 });
+
+export const sessions = sqliteTable('sessions', {
+  tokenHash: text('token_hash').primaryKey(),
+  userId: text('user_id').notNull().references(() => users.id),
+  roomId: text('room_id'),
+  expiresAt: integer('expires_at').notNull(),
+  revokedAt: integer('revoked_at'),
+  createdAt: integer('created_at').notNull()
+}, t => [index('idx_session_user').on(t.userId)]);

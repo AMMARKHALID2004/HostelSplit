@@ -1,7 +1,6 @@
 import { redirect } from '@sveltejs/kit';
 import { clearSession } from '$lib/server/auth';
-
-export function POST({ cookies }: import('./$types').RequestEvent) {
-  clearSession(cookies);
-  redirect(303, '/login');
+export async function POST({ cookies }: import('./$types').RequestEvent) {
+  await clearSession(cookies);
+  redirect(303, '/');
 }

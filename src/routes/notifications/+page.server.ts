@@ -9,13 +9,12 @@ async function owner(id: string, roomId: string) { const room = await getRoomSet
 export const load: PageServerLoad = async ({ locals }) => {
   if (!locals.user) redirect(303, '/login');
   const room = await owner(locals.user.id, locals.roomId!);
-  return { configured: await slackConfigured(room.id), status: await notificationStatus(room.id), recent: await db.select().from(notifications).where(eq(notifications.roomId, room.id)).orderBy(desc(notifications.createdAt)).limit(20), canSetWebhook: room.id !== 'default' };
+  return { configured: await slackConfigured(room.id), status: await notificationStatus(room.id), recent: await db.select().from(notifications).where(eq(notifications.roomId, room.id)).orderBy(desc(notifications.createdAt)).limit(20), canSetWebhook: true };
 };
 export const actions = {
   configure: async ({ locals, request }) => {
     if (!locals.user) redirect(303, '/login');
     const room = await owner(locals.user.id, locals.roomId!);
-    if (room.id === 'default') return fail(400, { message: 'The original room webhook is managed through Cloudflare.' });
     const webhook = String((await request.formData()).get('webhook') ?? '').trim();
     let valid = false;
     try { const url = new URL(webhook); valid = url.protocol === 'https:' && url.hostname === 'hooks.slack.com' && url.pathname.startsWith('/services/'); } catch { /* invalid URL */ }

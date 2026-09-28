@@ -4,13 +4,14 @@ A personal expense app for separate roommate rooms, hosted at **https://hostelsp
 
 ## Accounts and membership
 
-- First setup asks for name, unique username and a room PIN (4–8 digits). That account creates the original room.
-- Open **Rooms → Create a new room** for another workspace with its own PIN, creator approvals, members, balances, expenses, payment methods, reviews, penalties and Slack channel. Switch between your rooms from **Rooms**. One account can belong to several rooms.
-- New roommates use **Invite** to get the signup link. Signup asks for name, username and the room PIN, then waits for the creator's approval in **Invite → Join requests**.
-- Pending/declined accounts cannot access room data or make changes.
-- Sign in with username or an unambiguous name and the PIN chosen for your account’s first room. A new room’s PIN is used to join that room; creating or joining one does not change your sign-in PIN. If both name and username are supplied, both must match. Duplicate display names are allowed; usernames are unique, case-insensitive, 3–24 letters/numbers/underscores.
-- Existing accounts stay approved and receive `member_0001` style handles. Name login still works. Change name/username in **Profile**. The earliest existing account becomes room creator.
-- PIN login remains a trusted group model.
+- Visitors first see **Create your profile** and **Sign in**. Profiles are independent of rooms: name, unique username, optional picture and a personal password.
+- Passwords require 10–72 characters including uppercase, lowercase, number and symbol, without spaces (maximum 72 UTF-8 bytes). Both browser and server validate; the database stores bcrypt hashes at cost 12, never plaintext passwords.
+- After signup, choose **Create a new room** or **Join an existing room** using an invitation link/code and its room PIN. The PIN is only for joining; it is not the account password. Join requests need the room creator’s approval.
+- A room creator is its owner. Only the owner manages approvals, Slack settings and administrator actions. Every room has separate memberships, balances, expenses, payment methods, reviews and penalties. Switch rooms from **Rooms**.
+- Sign in using a unique username, or an unambiguous display name, and your personal password. Duplicate names are allowed. Usernames are case-insensitive, 3–24 letters/numbers/underscores. **Profile** lets you change identity, picture and password.
+- Signed-in devices reopen the selected room dashboard. Sessions use random opaque tokens, stored only as SHA-256 hashes in the database, with HttpOnly, Secure production cookies. The one-year cookie renews with continued use. Clearing browser data, expiry or changing the password requires signing in again; signing out revokes that device’s token.
+- Existing profiles and room history are preserved. Already signed-in members get a one-time password setup screen. Otherwise sign in once with the old username (or unique name) and old PIN in the password field, then set a personal password. This removes the account’s old PIN hash and revokes other saved sessions.
+- Pending/declined accounts cannot access room data or make changes there, but can manage their profile or create another room.
 
 ## Expenses, reviews and penalties
 
@@ -25,7 +26,7 @@ Choose equal or custom amounts. Custom shares must total the bill. Only approved
 
 ## Slack
 
-Create an Incoming Webhook using [Slack's setup guide](https://docs.slack.dev/messaging/sending-messages-using-incoming-webhooks/). The original room uses `SLACK_WEBHOOK_URL` in `.env` and the encrypted Cloudflare Pages environment. For each additional room, its creator opens **Slack** and saves that room’s own webhook URL. Never commit or share the URL.
+Create an Incoming Webhook using [Slack's setup guide](https://docs.slack.dev/messaging/sending-messages-using-incoming-webhooks/). The original room uses `SLACK_WEBHOOK_URL` in `.env` and the encrypted Cloudflare Pages environment. Any room’s owner can open **Slack** and save a webhook for that room; a saved webhook overrides the original room’s environment fallback. Never commit or share the URL.
 
 Notifications cover expense creation/cancellation, share acceptance/rejection, spam reports, review votes/verdicts, penalties, payment submission/confirmation/rejection, and membership requests/decisions. Messages contain no PIN, account number, QR or payment proof. Slack is send-only: use the app for all actions.
 
@@ -56,6 +57,7 @@ Deploy applies migrations, builds, and uploads `.svelte-kit/cloudflare`. For Git
 npm run check
 npm test
 npm run smoke
+npm run smoke:accounts
 npm run build
 ```
 

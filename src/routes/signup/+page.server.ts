@@ -1,44 +1,25 @@
 import { fail, redirect } from '@sveltejs/kit';
-import { hash } from 'bcryptjs';
-import { validUsername, validName } from '$lib/server/auth';
-import { notify } from '$lib/server/notifications';
-import { compare } from 'bcryptjs';
-import { db } from '$lib/server/db';
-import { users, roomMemberships } from '$lib/server/schema';
-import { getRoomSettings, setSession } from '$lib/server/auth';
+import { setSession } from '$lib/server/auth';
+import { registerAccount } from '$lib/server/accounts';
+import { imageToDataUrl } from '$lib/server/images';
 import type { Actions, PageServerLoad } from './$types';
-
-export const load: PageServerLoad = async ({ locals, url }) => {
+export const load: PageServerLoad = ({ locals, url }) => {
   if (locals.user) redirect(303, '/');
-  if (!(await getRoomSettings())) redirect(303, '/setup');
-  const roomId = url.searchParams.get('room') || 'default';
-  const room = await getRoomSettings(roomId);
-  if (!room) redirect(303, '/rooms');
-  return { roomId, roomName: room.name };
+  return { roomId: url.searchParams.get('room') ?? '' };
 };
-
 export const actions = {
-  default: async ({ request, cookies }) => {
+  default: async ({ request, cookies, url }) => {
     const data = await request.formData();
     const name = String(data.get('name') ?? '').trim();
-    const pin = String(data.get('pin') ?? '');
-    const roomId = String(data.get('roomId') ?? 'default');
-    const settings = await getRoomSettings(roomId);
-    if (!settings) redirect(303, '/setup');
-    if (!(await compare(pin, settings.pinHash))) return fail(400, { message: 'Room PIN is incorrect' });
-    const username = String(data.get('username') ?? '').trim().toLowerCase();
-    if (!validName(name)) return fail(400, { message: 'Enter a name between 2 and 40 letters' });
-    if (!validUsername(username)) return fail(400, { message: 'Username: 3–24 lowercase letters, numbers or underscores.' });
-    const id = crypto.randomUUID();
-    const pinHash = await hash(pin, 12);
+    const username = String(data.get('username') ?? '').trim();
+    const password = String(data.get('password') ?? '');
+    if (password !== data.get('confirm')) return fail(400, { message: 'Passwords do not match.', name, username });
+    let id: string;
     try {
-      await db.transaction(async tx => {
-        await tx.insert(users).values({ id, name, username, pinHash, membershipStatus: 'pending', createdAt: Date.now() });
-        await tx.insert(roomMemberships).values({ id: crypto.randomUUID(), roomId, userId: id, status: 'pending', createdAt: Date.now() });
-        await notify(tx, `${name} (@${username}) requested to join the room. The room creator can review this in Invite.`, roomId);
-      });
-    } catch { return fail(409, { message: 'That username is taken. Choose another.' }); }
-    await setSession(cookies, id, roomId);
-    redirect(303, '/pending');
+      id = await registerAccount({ name, username, password, avatarBase64: await imageToDataUrl(data.get('avatar')) });
+    } catch (e) { return fail(400, { message: e instanceof Error ? e.message : 'Could not create your profile.', name, username }); }
+    await setSession(cookies, id, null);
+    const invitedRoom = url.searchParams.get('room');
+    redirect(303, invitedRoom ? `/join/${encodeURIComponent(invitedRoom)}` : '/rooms');
   }
 } satisfies Actions;

@@ -50,6 +50,13 @@
       "when": 1790545088578,
       "tag": "0006_rare_storm",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "6",
+      "when": 1790573146461,
+      "tag": "0007_high_aaron_stack",
+      "breakpoints": true
     }
   ]
 }

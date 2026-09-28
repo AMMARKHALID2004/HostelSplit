@@ -1,11 +1,3 @@
-<script lang="ts">let { form } = $props();</script>
-<section class="login card"><p class="eyebrow">Welcome home</p><h1>Split the bill.<br />Keep the peace.</h1><p class="muted">Use your username or name and your sign-in PIN. Names shared by multiple people require a username.</p>
-  <form method="POST">
-    <label for="name">Your name</label><input id="name" name="name" autocomplete="name" placeholder="The name you joined with" />
-    <label for="username">Unique username (or sign in with your name)</label><input id="username" name="username" autocomplete="username" autocapitalize="none" spellcheck="false"  minlength="3" maxlength="24" pattern="[a-zA-Z0-9_]+" /><label for="pin">Sign-in PIN</label><input id="pin" name="pin" type="password" autocomplete="current-password" required />
-    {#if form?.message}<p class="error" role="alert">{form.message}</p>{/if}
-    <button class="button">Enter room</button>
-  </form>
-  <p><a href="/signup">New roommate? Join a room</a></p>
-</section>
-<style>.login{max-width:440px;margin:5vh auto;padding:30px}.eyebrow{color:#0f8b71;text-transform:uppercase;letter-spacing:.14em;font-size:12px;font-weight:800}.button{width:100%;margin-top:24px}</style>
+<script lang="ts">let { data, form } = $props();</script>
+<section class="login card"><p class="eyebrow">Welcome back</p><h1>Pick up where you left off.</h1><p class="muted">Sign in once on this device. Your room will be here when you return.</p><form method="POST"><label for="identity-type">Sign in using</label><select id="identity-type" name="identityType"><option value="username">Unique username</option><option value="name">Name (if unique)</option></select><label for="username">Username or name</label><input id="username" name="username" autocomplete="username" autocapitalize="none" spellcheck="false" required /><label for="password">Password</label><input id="password" name="password" type="password" autocomplete="current-password" required />{#if form?.message}<p class="error" role="alert">{form.message}</p>{/if}<button class="button">Sign in</button></form><p><a href="/signup{data.roomId ? `?room=${encodeURIComponent(data.roomId)}` : ''}">Create a profile</a></p><details><summary>Already used the old PIN login?</summary><p class="muted">Use your existing username and PIN once in the password field. You’ll then choose your personal password.</p></details></section>
+<style>.login{max-width:460px;margin:5vh auto}.button{width:100%;margin:24px 0}details{margin-top:24px}details p{margin-top:12px}</style>
