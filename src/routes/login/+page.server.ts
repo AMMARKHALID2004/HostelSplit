@@ -7,11 +7,11 @@ export const load: PageServerLoad = ({ locals, url }) => {
   return { roomId };
 };
 export const actions = {
-  default: async ({ request, cookies, url }) => {
+  default: async ({ request, cookies, url, platform }) => {
     const data = await request.formData();
     const identity = String(data.get('username') ?? '');
     const byName = data.get('identityType') === 'name';
-    const result = await authenticate(byName ? identity : '', String(data.get('password') ?? ''), byName ? '' : identity);
+    const result = await authenticate(byName ? identity : '', String(data.get('password') ?? ''), byName ? '' : identity, platform?.env?.PASSWORD_HASHER);
     if (!result.user) return fail(400, { message: 'Check your username or name and password. If names are shared, use your unique username.' });
     await setSession(cookies, result.user.id);
     if (!result.user.passwordHash) redirect(303, '/account/password');

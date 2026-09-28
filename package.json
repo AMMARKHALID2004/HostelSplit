@@ -13,8 +13,9 @@
     "db:migrate": "drizzle-kit migrate",
     "db:seed": "node --import tsx scripts/seed.ts",
     "smoke": "node --import tsx scripts/smoke.ts",
-    "deploy": "npm run db:migrate && npm run build && wrangler pages deploy .svelte-kit/cloudflare --project-name hostelsplit --branch main",
-    "smoke:accounts": "node --import tsx scripts/accounts-smoke.ts"
+    "deploy": "npm run deploy:hasher && npm run db:migrate && npm run build && wrangler pages deploy .svelte-kit/cloudflare --project-name hostelsplit --branch main",
+    "smoke:accounts": "node --import tsx scripts/accounts-smoke.ts",
+    "deploy:hasher": "wrangler deploy --config workers/password-hasher/wrangler.jsonc"
   },
   "dependencies": {
     "@libsql/client": "^0.15.0",

@@ -1,5 +1,5 @@
 import { createHash, createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
-import { compare } from 'bcryptjs';
+import { verifyCredential, type PasswordHasherBinding } from './password-hasher';
 import { eq } from 'drizzle-orm';
 import { membershipOf } from './rooms';
 import { db } from './db';
@@ -15,14 +15,14 @@ export async function getRoomSettings(roomId = 'default') {
 }
 export const validUsername = (value: string) => /^[a-z0-9_]{3,24}$/.test(value);
 export const validName = (value: string) => /^[\p{L}][\p{L} '\-]{1,39}$/u.test(value);
-export async function authenticate(name: string, password: string, username = '') {
+export async function authenticate(name: string, password: string, username = '', hasher?: PasswordHasherBinding) {
   const people = await db.select({ id: users.id, name: users.name, username: users.username, passwordHash: users.passwordHash, pinHash: users.pinHash }).from(users);
   const matches = username.trim() ? people.filter(p => p.username === username.trim().toLowerCase()) : people.filter(p => p.name.toLowerCase() === name.trim().toLowerCase());
   if (matches.length !== 1) return { user: null, reason: 'identity' as const };
   const user = matches[0];
   if (name.trim() && user.name.toLowerCase() !== name.trim().toLowerCase()) return { user: null, reason: 'identity' as const };
   const stored = user.passwordHash || user.pinHash;
-  if (!stored || password.length > 200 || !(await compare(password, stored))) return { user: null, reason: 'password' as const };
+  if (!stored || password.length > 200 || !(await verifyCredential(password, stored, hasher))) return { user: null, reason: 'password' as const };
   return { user, reason: null };
 }
 export async function preferredRoom(userId: string) {

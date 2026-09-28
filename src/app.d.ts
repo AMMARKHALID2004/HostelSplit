@@ -2,7 +2,7 @@
 
 declare global {
   namespace App {
-    interface Platform { context: { waitUntil(promise: Promise<unknown>): void } }
+    interface Platform { env?: { PASSWORD_HASHER?: import('$lib/server/password-hasher').PasswordHasherBinding }; context: { waitUntil(promise: Promise<unknown>): void } }
     interface Locals {
       roomId: string | null;
       membership: import('$lib/server/schema').roomMemberships.$inferSelect | null;

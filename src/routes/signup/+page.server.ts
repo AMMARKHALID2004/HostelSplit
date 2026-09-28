@@ -8,7 +8,7 @@ export const load: PageServerLoad = ({ locals, url }) => {
   return { roomId: url.searchParams.get('room') ?? '' };
 };
 export const actions = {
-  default: async ({ request, cookies, url }) => {
+  default: async ({ request, cookies, url, platform }) => {
     const data = await request.formData();
     const name = String(data.get('name') ?? '').trim();
     const username = String(data.get('username') ?? '').trim();
@@ -16,7 +16,7 @@ export const actions = {
     if (password !== data.get('confirm')) return fail(400, { message: 'Passwords do not match.', name, username });
     let id: string;
     try {
-      id = await registerAccount({ name, username, password, avatarBase64: await imageToDataUrl(data.get('avatar')) });
+      id = await registerAccount({ name, username, password, avatarBase64: await imageToDataUrl(data.get('avatar')) }, platform?.env?.PASSWORD_HASHER);
     } catch (e) { return fail(400, { message: e instanceof Error ? e.message : 'Could not create your profile.', name, username }); }
     await setSession(cookies, id, null);
     const invitedRoom = url.searchParams.get('room');

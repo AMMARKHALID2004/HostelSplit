@@ -32,6 +32,12 @@ Notifications cover expense creation/cancellation, share acceptance/rejection, s
 
 The room creator can open **Slack** to see that room’s delivery status, send a test and retry. Events are saved transactionally in an outbox. A database lease serializes sends and respects Slack rate limits. Failed deliveries retry on future app requests; no traffic means retries wait until someone uses the app or clicks Retry. A timeout after Slack accepts a message can cause duplicate delivery. Old WhatsApp tables remain solely to preserve existing data; the bot code and dependencies have been removed.
 
+## Password hashing on Cloudflare
+
+Pages Free has a small CPU allowance. Cost-12 bcrypt must run in the private `hostelsplit-password-hasher` Durable Object, which has its own larger CPU budget on Cloudflare's free plan. Pages invokes it through the `PASSWORD_HASHER` binding for signup, login, password changes and room PIN creation/verification. Existing hashes and credentials remain valid.
+
+This service has no public route, logs no credentials and does not use object storage. All accounts and app data remain in Turso. The SQLite-class declaration is required for free-plan Durable Objects; it does not replace the application's database. Production fails closed if the binding is missing, rather than falling back to expensive hashing inside Pages. Local Node development runs bcrypt locally.
+
 ## Run locally
 
 ```bash
@@ -49,7 +55,7 @@ The `hostelsplit` Pages project uses direct uploads. GitHub pushes alone do not 
 2. Set the same values in Pages **Settings → Variables and Secrets** (all three as encrypted secrets; Wrangler clears dashboard plain-text variables absent from its config).
 3. `npx wrangler login` if needed, then `npm run deploy`.
 
-Deploy applies migrations, builds, and uploads `.svelte-kit/cloudflare`. For Git-connected Pages projects, use `npm run build` and output `.svelte-kit/cloudflare`; builds migrate automatically. The migration places existing accounts, expenses, approvals, penalties, reviews and payments into the original room. `.env` is ignored by Git. Friends can install the PWA from the HTTPS Pages URL; actions require internet access.
+Deploy first publishes the private password hasher, then applies migrations, builds, and uploads `.svelte-kit/cloudflare`. For Git-connected Pages projects, use `npm run build` and output `.svelte-kit/cloudflare`; builds migrate automatically. The migration places existing accounts, expenses, approvals, penalties, reviews and payments into the original room. `.env` is ignored by Git. Friends can install the PWA from the HTTPS Pages URL; actions require internet access.
 
 ## Verify
 
